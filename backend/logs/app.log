@@ -1,0 +1,16 @@
+2026-10-23 13:03:03.065 [INFO] 📁 Directorio de uploads creado: ./uploads
+2026-10-23 13:12:47.416 [ERROR] ⚠️ Error al sincronizar modelos:
+2026-10-23 13:12:47.428 [INFO] 🚀 Servidor iniciado en http://localhost:3000
+2026-10-23 13:12:47.432 [INFO] 🔌 Socket.io disponible en ws://localhost:3000/socket.io
+2026-10-23 13:12:47.437 [INFO] 🌍 Entorno: development
+2026-10-23 13:12:47.448 [INFO] 🗄️ Base de datos: 127.0.0.1:3306/chat_translate_app
+2026-10-23 13:12:52.271 [INFO] ✅ Modelos sincronizados con la base de datos
+2026-10-23 13:13:33.936 [ERROR] ❌ Servicio de Mistral AI no disponible:
+2026-10-23 13:22:14.929 [INFO] ✅ Modelos sincronizados con la base de datos
+2026-10-23 13:23:09.186 [INFO] ✅ Modelos sincronizados con la base de datos
+2026-10-23 13:24:11.209 [INFO] ✅ Modelos sincronizados con la base de datos
+2026-10-23 13:24:11.218 [INFO] 🚀 Servidor iniciado en http://localhost:3000
+2026-10-23 13:24:11.219 [INFO] 🔌 Socket.io disponible en ws://localhost:3000/socket.io
+2026-10-23 13:24:11.220 [INFO] 🌍 Entorno: development
+2026-10-23 13:24:11.220 [INFO] 🗄️ Base de datos: 127.0.0.1:3306/chat_translate_app
+2026-10-23 13:38:00.674 [ERROR] ❌ Servicio de Mistral AI no disponible:
