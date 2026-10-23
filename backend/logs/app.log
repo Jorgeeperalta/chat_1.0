@@ -14,3 +14,25 @@
 2026-10-23 13:24:11.220 [INFO] 🌍 Entorno: development
 2026-10-23 13:24:11.220 [INFO] 🗄️ Base de datos: 127.0.0.1:3306/chat_translate_app
 2026-10-23 13:38:00.674 [ERROR] ❌ Servicio de Mistral AI no disponible:
+2026-10-23 13:57:57.647 [INFO] 👤 Nuevo usuario registrado: edu46 (ID: 1)
+2026-10-23 13:57:57.894 [INFO] ✅ Socket autenticado: 4BiKNekJxQnhRqLYAAAA (User: 1)
+2026-10-23 13:57:57.898 [INFO] ✅ Conexión WebSocket establecida: 4BiKNekJxQnhRqLYAAAA
+2026-10-23 13:58:45.238 [INFO] ⚡ Socket desconectado: 4BiKNekJxQnhRqLYAAAA (User: 1)
+2026-10-23 13:58:45.822 [ERROR] ❌ Error al manejar desconexión:
+2026-10-23 13:58:47.629 [INFO] ✅ Socket autenticado: FExxyt5rEAugMud-AAAB (User: 1)
+2026-10-23 13:58:47.702 [INFO] ✅ Conexión WebSocket establecida: FExxyt5rEAugMud-AAAB
+2026-10-23 13:58:47.870 [ERROR] ❌ Error al obtener datos del usuario: Language is not associated to User!
+2026-10-23 13:58:48.010 [ERROR] ❌ Error interno: Language is not associated to User! (User: 1) - /api/auth/me
+SequelizeEagerLoadingError: Language is not associated to User!
+    at User._getIncludedAssociation (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:565:13)
+    at User._validateIncludedElement (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:502:53)
+    at C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:421:37
+    at Array.map (<anonymous>)
+    at User._validateIncludedElements (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:417:39)
+    at User.findAll (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:1124:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async User.findOne (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:1240:12)
+    at async User.findByPk (C:\Users\Edu\Desktop\chat_1.0\backend\node_modules\sequelize\lib\model.js:1221:12)
+    at async C:\Users\Edu\Desktop\chat_1.0\backend\src\routes\authRoutes.js:348:18
+2026-10-23 14:16:59.193 [INFO] ⚡ Socket desconectado: FExxyt5rEAugMud-AAAB (User: 1)
+2026-10-23 14:16:59.564 [ERROR] ❌ Error al manejar desconexión:
