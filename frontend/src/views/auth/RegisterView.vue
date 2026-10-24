@@ -341,8 +341,9 @@ const handleRegister = async () => {
     console.error('Error al registrar:', error);
     
     // Mostrar mensaje de error
-    errorMessage.value = error?.response?.data?.message || 
-      error?.message || 
+    errorMessage.value = error?.response?.data?.message ||
+      error?.response?.data?.details?.[0]?.msg ||
+      error?.message ||
       t('errors.serverError');
     errorDialog.value = true;
   } finally {

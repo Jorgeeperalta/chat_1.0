@@ -8,7 +8,13 @@
   <v-container fluid class="home-view pa-0">
     <v-row no-gutters class="fill-height">
       <!-- Lista de conversaciones (sidebar izquierdo) -->
-      <v-col cols="12" md="4" lg="3" class="conversation-sidebar">
+      <v-col
+        cols="12"
+        md="4"
+        lg="3"
+        class="conversation-sidebar"
+        :class="{ 'sidebar-open': showSidebar }"
+      >
         <ConversationList />
       </v-col>
 
@@ -146,7 +152,7 @@
         </v-app-bar>
 
         <!-- Área de mensajes -->
-        <v-main class="messages-area">
+        <div class="messages-area">
           <!-- Mensaje de bienvenida (si no hay conversación seleccionada) -->
           <div
             v-if="!currentConversation"
@@ -204,8 +210,8 @@
                   v-else
                   class="message-group"
                   :class="{
-                    'current-user': message.sender_id === currentUserId,
-                    'other-user': message.sender_id !== currentUserId,
+                    'current-user': String(message.sender_id) === String(currentUserId),
+                    'other-user': String(message.sender_id) !== String(currentUserId),
                     'first-in-group': !isSameSender(message, messages[index - 1]),
                   }"
                 >
@@ -217,32 +223,9 @@
                     @react="handleReact"
                     @delete="handleDelete"
                     @click="handleMessageClick"
-                    @translation-required="handleTranslationRequired"
                   />
                 </div>
               </template>
-
-              <!-- Mensajes en tiempo real (Socket.io) -->
-              <div
-                v-for="message in incomingMessages"
-                :key="`incoming-${message.id || Date.now()}`"
-                class="message-group"
-                :class="{
-                  'current-user': message.sender_id === currentUserId,
-                  'other-user': message.sender_id !== currentUserId,
-                }"
-              >
-                <MessageBubble
-                  :message="message"
-                  :compact="false"
-                  :show-timestamp="true"
-                  @reply="handleReply"
-                  @react="handleReact"
-                  @delete="handleDelete"
-                  @click="handleMessageClick"
-                  @translation-required="handleTranslationRequired"
-                />
-              </div>
 
               <!-- Indicador de que hay más mensajes -->
               <div
@@ -275,7 +258,7 @@
               />
             </div>
           </template>
-        </v-main>
+        </div>
       </v-col>
     </v-row>
 
@@ -423,10 +406,6 @@ const currentConversation = computed(() => {
 
 const messages = computed(() => {
   return chatStore.messages.filter(m => m.conversation_id === currentConversation.value?.id);
-});
-
-const incomingMessages = computed(() => {
-  return chatStore.incomingMessages.filter(m => m.conversation_id === currentConversation.value?.id);
 });
 
 const hasMoreMessages = computed(() => {
@@ -577,16 +556,6 @@ const handleDelete = (message) => {
 const handleMessageClick = (event) => {
   // TODO: Implementar acciones al hacer click
   console.log('Click en mensaje:', event);
-};
-
-const handleTranslationRequired = async (message) => {
-  try {
-    await chatStore.translateMessage(message);
-    showSnackbarMessage('Mensaje traducido', 'success');
-  } catch (error) {
-    console.error('Error al traducir:', error);
-    showSnackbarMessage('Error al traducir el mensaje', 'error');
-  }
 };
 
 const sendMessage = async (data) => {
@@ -832,12 +801,6 @@ watch(() => chatStore.messages, (newMessages) => {
   }
 }, { deep: true });
 
-// Escuchar mensajes entrantes en tiempo real
-watch(() => incomingMessages.value, (newMessages) => {
-  if (newMessages.length > 0) {
-    scrollToBottom();
-  }
-});
 </script>
 
 <style lang="scss" scoped>
@@ -857,8 +820,12 @@ watch(() => incomingMessages.value, (newMessages) => {
       bottom: 0;
       z-index: 100;
       width: 80%;
-      transform: translateX(v-bind(showSidebar ? '0' : '-100%'));
+      transform: translateX(-100%);
       transition: transform 0.3s ease;
+
+      &.sidebar-open {
+        transform: translateX(0);
+      }
     }
   }
   

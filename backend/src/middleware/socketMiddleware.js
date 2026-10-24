@@ -88,7 +88,8 @@ const authenticateSocket = async (socket, next) => {
  * @param {Object} socket - Socket
  * @param {Object} data - Datos del evento
  */
-const handleJoin = async (socket, data) => {
+const handleJoin = async (socket, data, acknowledge) => {
+  let joinAcknowledged = false;
   try {
     const { conversationId } = data;
 
@@ -107,7 +108,11 @@ const handleJoin = async (socket, data) => {
     }
 
     // Unirse a la sala de Socket.io
-    socket.join(conversationId);
+    const conversationRoom = String(conversationId);
+    await socket.join(conversationRoom);
+    acknowledge?.({ success: true, conversationId });
+    joinAcknowledged = true;
+    logger.info(`📡 Socket ${socket.id} unido a sala ${conversationRoom}`);
 
     // Actualizar socket_id en la relación usuario-conversación
     await models.UserConversation.update(
@@ -116,7 +121,7 @@ const handleJoin = async (socket, data) => {
     );
 
     // Notificar a otros usuarios
-    socket.to(conversationId).emit('user_joined', {
+    socket.to(conversationRoom).emit('user_joined', {
       userId: socket.userId,
       username: socket.user.username,
       conversationId,
@@ -137,7 +142,10 @@ const handleJoin = async (socket, data) => {
     logger.info(`👥 Usuario ${socket.userId} se unió a la conversación ${conversationId}`);
   } catch (error) {
     logger.error(`❌ Error al unir usuario ${socket.userId} a conversación ${data.conversationId}:`, error.message);
-    socket.emit('join_error', { error: error.message });
+    if (!joinAcknowledged) {
+      socket.emit('join_error', { error: error.message });
+      acknowledge?.({ error: error.message });
+    }
   }
 };
 
@@ -155,10 +163,11 @@ const handleLeave = async (socket, data) => {
     }
 
     // Salir de la sala de Socket.io
-    socket.leave(conversationId);
+    const conversationRoom = String(conversationId);
+    socket.leave(conversationRoom);
 
     // Notificar a otros usuarios
-    socket.to(conversationId).emit('user_left', {
+    socket.to(conversationRoom).emit('user_left', {
       userId: socket.userId,
       username: socket.user.username,
       conversationId,
@@ -176,9 +185,9 @@ const handleLeave = async (socket, data) => {
  * @param {Object} data - Datos del mensaje
  * @param {Object} io - Instancia de Socket.io
  */
-const handleTextMessage = async (socket, data, io) => {
+const handleTextMessage = async (socket, data, io, acknowledge) => {
   try {
-    const { conversationId, content, languageCode } = data;
+    const { conversationId, content, languageCode, clientMessageId } = data;
 
     if (!conversationId || !content) {
       throw new Error('conversationId y content son requeridos');
@@ -218,10 +227,32 @@ const handleTextMessage = async (socket, data, io) => {
         {
           model: models.User,
           as: 'user',
-          attributes: ['id', 'username', 'preferred_language_id'],
+          attributes: ['id', 'username', 'preferred_language_id', 'native_language_id'],
         },
       ],
     });
+
+    const fullMessage = await models.Message.findByIdWithDetails(message.id);
+    for (const participant of participants) {
+      if (participant.user.id !== socket.userId) {
+        await models.UserConversation.incrementUnreadCount(participant.user.id, conversationId);
+      }
+    }
+
+    io.to(String(conversationId)).emit('new_text_message', {
+      message: fullMessage,
+      clientMessageId,
+      sender: {
+        id: socket.userId,
+        username: socket.user.username,
+        avatar: socket.user.avatar_url,
+      },
+      conversationId,
+    });
+    socket.emit('message_sent', { success: true, messageId: message.id, clientMessageId, conversationId });
+    acknowledge?.({ success: true, messageId: message.id, clientMessageId });
+
+    logger.info(`💬 Mensaje de texto enviado por ${socket.userId} en ${conversationId}`);
 
     // Procesar traducciones para cada participante
     for (const participant of participants) {
@@ -230,7 +261,10 @@ const handleTextMessage = async (socket, data, io) => {
       const targetLanguageId = participant.user.preferred_language_id || participant.user.native_language_id;
       const targetLanguage = await models.Language.findByPk(targetLanguageId);
 
-      if (!targetLanguage) continue;
+      if (!targetLanguage) {
+        logger.warn(`⚠️ No se encontró idioma de destino para usuario ${participant.user.id}`);
+        continue;
+      }
 
       if (originalLanguage?.id !== targetLanguage.id) {
         // Traducir el mensaje
@@ -256,49 +290,28 @@ const handleTextMessage = async (socket, data, io) => {
                 mistral_completion_tokens: result.completionTokens,
                 mistral_response_time_ms: result.responseTimeMs,
               });
+              logger.info(`🌐 Mensaje ${message.id} traducido a ${targetLanguage.code}`);
+              io.to(String(conversationId)).emit('message_translation_updated', {
+                messageId: message.id,
+                conversationId,
+                translatedContent: result.translatedText,
+                targetLanguageId: targetLanguage.id,
+                translationStatus: 'completed',
+              });
             }
           }
         } catch (translationError) {
           logger.warn(`⚠️ Error al traducir para usuario ${participant.user.id}:`, translationError.message);
         }
+      } else {
+        logger.info(`ℹ️ No se requiere traducción del mensaje ${message.id}: idioma de destino ${targetLanguage.code} coincide con el origen`);
       }
     }
 
-    // Obtener el mensaje con detalles
-    const fullMessage = await models.Message.findByIdWithDetails(message.id);
-
-    // Incrementar contador de no leídos para otros participantes
-    for (const participant of participants) {
-      if (participant.user.id !== socket.userId) {
-        await models.UserConversation.incrementUnreadCount(
-          participant.user.id,
-          conversationId
-        );
-      }
-    }
-
-    // Enviar mensaje a todos los participantes
-    io.to(conversationId).emit('new_text_message', {
-      message: fullMessage,
-      sender: {
-        id: socket.userId,
-        username: socket.user.username,
-        avatar: socket.user.avatar_url,
-      },
-      conversationId,
-    });
-
-    // Confirmar al remitente
-    socket.emit('message_sent', {
-      success: true,
-      messageId: message.id,
-      conversationId,
-    });
-
-    logger.info(`💬 Mensaje de texto enviado por ${socket.userId} en ${conversationId}`);
   } catch (error) {
-    logger.error(`❌ Error al procesar mensaje de texto:`, error.message);
+    logger.error(`❌ Error al procesar mensaje de texto: ${error.message}`);
     socket.emit('message_error', { error: error.message });
+    acknowledge?.({ error: error.message });
   }
 };
 
@@ -308,9 +321,9 @@ const handleTextMessage = async (socket, data, io) => {
  * @param {Object} data - Datos del mensaje
  * @param {Object} io - Instancia de Socket.io
  */
-const handleAudioMessage = async (socket, data, io) => {
+const handleAudioMessage = async (socket, data, io, acknowledge) => {
   try {
-    const { conversationId, audioBase64, duration, languageCode } = data;
+    const { conversationId, audioBase64, duration, languageCode, clientMessageId } = data;
 
     if (!conversationId || !audioBase64) {
       throw new Error('conversationId y audioBase64 son requeridos');
@@ -418,8 +431,9 @@ const handleAudioMessage = async (socket, data, io) => {
     }
 
     // Enviar mensaje a todos los participantes
-    io.to(conversationId).emit('new_audio_message', {
+    io.to(String(conversationId)).emit('new_audio_message', {
       message: fullMessage,
+      clientMessageId,
       sender: {
         id: socket.userId,
         username: socket.user.username,
@@ -432,14 +446,17 @@ const handleAudioMessage = async (socket, data, io) => {
     socket.emit('message_sent', {
       success: true,
       messageId: message.id,
+      clientMessageId,
       conversationId,
       audioUrl: audioFile.url,
     });
+    acknowledge?.({ success: true, messageId: message.id, clientMessageId, audioUrl: audioFile.url });
 
     logger.info(`🎤 Mensaje de audio enviado por ${socket.userId} en ${conversationId}`);
   } catch (error) {
-    logger.error(`❌ Error al procesar mensaje de audio:`, error.message);
+    logger.error(`❌ Error al procesar mensaje de audio: ${error.message}`);
     socket.emit('message_error', { error: error.message });
+    acknowledge?.({ error: error.message });
   }
 };
 
@@ -551,7 +568,11 @@ const handleDisconnect = async (socket, io) => {
       }
     }
   } catch (error) {
-    logger.error(`❌ Error al manejar desconexión:`, error.message);
+    logger.error(`❌ Error al manejar desconexión: ${error.message}`, {
+      stack: error.stack,
+      socketId: socket.id,
+      userId: socket.userId,
+    });
   }
 };
 

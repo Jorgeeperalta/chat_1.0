@@ -26,7 +26,7 @@ router.post(
       .trim()
       .notEmpty().withMessage('El nombre de usuario es obligatorio')
       .isLength({ min: 3, max: 50 }).withMessage('El nombre de usuario debe tener entre 3 y 50 caracteres')
-      .matches(/^[a-zA-Z0-9_]+$/).withMessage('El nombre de usuario solo puede contener letras, números y guiones bajos'),
+      .matches(/^[a-zA-Z0-9_-]+$/).withMessage('El nombre de usuario solo puede contener letras, números, guiones y guiones bajos'),
     body('email')
       .trim()
       .notEmpty().withMessage('El correo electrónico es obligatorio')
@@ -157,7 +157,20 @@ router.post(
 router.post(
   '/login',
   [
-    body('email').trim().isEmail().withMessage('Correo electrónico no válido'),
+    body('email')
+      .optional({ checkFalsy: true })
+      .trim()
+      .isEmail().withMessage('Correo electrónico no válido'),
+    body('username')
+      .optional({ checkFalsy: true })
+      .trim()
+      .isLength({ min: 3, max: 255 }).withMessage('Usuario no válido'),
+    body().custom((_, { req }) => {
+      if (!req.body.email && !req.body.username) {
+        throw new Error('El usuario o correo electrónico es obligatorio');
+      }
+      return true;
+    }),
     body('password').notEmpty().withMessage('La contraseña es obligatoria'),
   ],
   async (req, res, next) => {
@@ -170,10 +183,13 @@ router.post(
         });
       }
 
-      const { email, password } = req.body;
+      const { email, username, password } = req.body;
+      const identifier = email || username;
 
       // Buscar usuario
-      const user = await models.User.findByEmail(email);
+      const user = identifier.includes('@')
+        ? await models.User.findByEmail(identifier)
+        : await models.User.findByUsername(identifier);
 
       if (!user) {
         return res.status(401).json({

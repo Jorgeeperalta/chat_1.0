@@ -226,6 +226,7 @@
 <script setup>
 import { ref, computed, onMounted, inject } from 'vue';
 import { useRouter } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import { useConversationStore } from '@/stores/conversationStore';
@@ -242,6 +243,7 @@ const device = inject('device');
 // ============================================
 
 const router = useRouter();
+const { t } = useI18n();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 const conversationStore = useConversationStore();
@@ -342,7 +344,7 @@ const fetchUsers = async () => {
     users.value = response.data.users || [];
   } catch (error) {
     console.error('Error al cargar usuarios:', error);
-    showSnackbarMessage('Error al cargar usuarios', 'error');
+    showSnackbarMessage(t('errors.loadUsersFailed'), 'error');
   } finally {
     loading.value = false;
   }
@@ -361,15 +363,9 @@ const createConversation = async () => {
   
   try {
     loading.value = true;
-    
-    const response = await api.post('/api/conversations', {
-      user_id: selectedUser.value.id,
-    });
-    
-    const conversation = response.data.conversation;
-    
-    // Añadir al store
-    conversationStore.addConversation(conversation);
+    const conversation = await conversationStore.createPrivateConversation(
+      selectedUser.value.id
+    );
     
     // Redirigir a la conversación
     router.push({

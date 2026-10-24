@@ -5,7 +5,6 @@
  -->
 
 <template>
-  <v-app>
     <!-- Navbar superior -->
     <v-app-bar
       app
@@ -263,15 +262,15 @@
     </v-navigation-drawer>
 
     <!-- Contenido principal -->
-    <v-main>
-      <v-container fluid class="pa-0">
-        <slot />
+    <v-main class="d-flex flex-column">
+      <v-container fluid class="pa-0 fill-height d-flex flex-column">
+        <router-view />
       </v-container>
     </v-main>
 
     <!-- Botón flotante para nueva conversación (desktop) -->
     <v-btn
-      v-if="!isMobile"
+      v-if="!isMobile && !['chat', 'conversation', 'new-conversation'].includes(currentRoute.name)"
       color="primary"
       icon="mdi-message-plus"
       size="large"
@@ -279,16 +278,18 @@
       :to="{ name: 'new-conversation' }"
       fab
     />
-  </v-app>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, inject } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
+import { useTranslationStore } from '@/stores/translationStore';
 import { useUserStore } from '@/stores/userStore';
+import api from '@/services/api';
 
 // ============================================
 // STORES
@@ -299,7 +300,9 @@ const route = useRoute();
 const themeStore = useThemeStore();
 const authStore = useAuthStore();
 const conversationStore = useConversationStore();
+const translationStore = useTranslationStore();
 const userStore = useUserStore();
+const { locale } = useI18n();
 
 // ============================================
 // INJECT
@@ -347,7 +350,7 @@ const currentUserFullName = computed(() => {
 });
 
 const recentConversations = computed(() => {
-  return conversationStore.recentConversations.slice(0, 5);
+  return conversationStore.sortedConversations.slice(0, 5);
 });
 
 const unreadNotifications = computed(() => {
@@ -365,7 +368,10 @@ const availableLanguages = computed(() => [
 ]);
 
 const currentLanguage = computed(() => {
-  return userStore.preferredLanguage || themeStore.language || 'es';
+  const preferredLanguage = translationStore.languages.find(
+    language => language.id === Number(authStore.user?.preferred_language_id)
+  );
+  return authStore.user?.preferredLanguage?.code || preferredLanguage?.code || locale.value || 'es';
 });
 
 const currentLanguageName = computed(() => {
@@ -384,8 +390,19 @@ const currentLanguageIcon = computed(() => {
 
 const changeLanguage = async (lang) => {
   try {
-    await userStore.updatePreferredLanguage(lang);
-    themeStore.setLanguage(lang);
+    if (!translationStore.languages.length) {
+      await translationStore.fetchLanguages();
+    }
+    const language = translationStore.languages.find(item => item.code === lang);
+    if (!language) throw new Error(`Idioma no disponible: ${lang}`);
+
+    const response = await api.patch('/api/auth/me', {
+      preferred_language_id: language.id,
+    });
+    authStore.user = response.data.user;
+    userStore.setUser(response.data.user);
+    localStorage.setItem('chat_app_user', JSON.stringify(response.data.user));
+    locale.value = lang;
     snackbar?.show({ text: 'Idioma cambiado correctamente', color: 'success' });
   } catch (error) {
     console.error('Error al cambiar idioma:', error);
@@ -427,8 +444,7 @@ const formatTime = (dateString) => {
 // ============================================
 
 onMounted(() => {
-  // Cargar conversaciones recientes
-  conversationStore.fetchRecentConversations();
+  conversationStore.initialize();
 });
 </script>
 

@@ -209,6 +209,10 @@ export const useUserStore = defineStore('user', () => {
     return usersById.value[userId]?.status || 'offline';
   };
 
+  const isUserOnline = (userId) => {
+    return getUserStatus(userId) === 'online';
+  };
+
   /**
    * Agrega múltiples usuarios al store
    * @param {User[]} newUsers - Array de usuarios
@@ -264,6 +268,7 @@ export const useUserStore = defineStore('user', () => {
     updateUserAvatar,
     updateUserStatus,
     getUserStatus,
+    isUserOnline,
     addUsers,
     removeUser,
     clear,

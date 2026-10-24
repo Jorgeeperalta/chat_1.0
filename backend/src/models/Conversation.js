@@ -133,22 +133,35 @@ module.exports = (sequelize, DataTypes) => {
     const { models } = require('./index');
     
     // Verificar si ya existe una conversación privada
-    const existing = await this.findOne({
+    const memberships = await models.UserConversation.findAll({
+      attributes: ['conversation_id', 'user_id'],
+      where: {
+        user_id: [userId1, userId2],
+        left_at: null,
+      },
       include: [
         {
-          model: models.User,
-          as: 'users',
-          through: { attributes: [] },
-          where: { id: [userId1, userId2] },
+          model: models.Conversation,
+          as: 'conversation',
+          attributes: [],
+          where: { type: 'private' },
         },
       ],
-      where: { type: 'private' },
-      group: ['Conversation.id'],
-      having: sequelize.fn('COUNT', sequelize.col('users.id')) === 2,
     });
+    const membershipsByConversation = new Map();
 
-    if (existing) {
-      return existing;
+    for (const membership of memberships) {
+      const participantIds = membershipsByConversation.get(membership.conversation_id) || new Set();
+      participantIds.add(membership.user_id);
+      membershipsByConversation.set(membership.conversation_id, participantIds);
+    }
+
+    const existingConversationId = [...membershipsByConversation].find(([, participantIds]) =>
+      participantIds.has(userId1) && participantIds.has(userId2)
+    )?.[0];
+
+    if (existingConversationId) {
+      return this.findByPk(existingConversationId);
     }
 
     // Crear nueva conversación
@@ -217,7 +230,7 @@ module.exports = (sequelize, DataTypes) => {
       include,
       limit,
       offset,
-      order: [['last_message_at', 'DESC NULLS LAST']],
+      order: [['last_message_at', 'DESC']],
       distinct: true,
     });
 

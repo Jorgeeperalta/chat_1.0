@@ -7,7 +7,7 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { createVuetify } from 'vuetify';
-import { aliases, mdi } from 'vuetify/iconsets/mdi-svg';
+import { aliases, mdi } from 'vuetify/iconsets/mdi';
 import * as components from 'vuetify/components';
 import * as directives from 'vuetify/directives';
 import { createI18n } from 'vue-i18n';
@@ -54,6 +54,12 @@ const messages = {
       send: 'Send',
       newConversation: 'New Conversation',
       search: 'Search...',
+      searchUsers: 'Search users...',
+      noUsersFound: 'No users found',
+      noUsersAvailable: 'No users available',
+      online: 'Online',
+      selected: 'Selected',
+      startChat: 'Start chat',
       startAudioRecording: 'Hold to record audio',
       stopAudioRecording: 'Release to send',
       cancelAudioRecording: 'Cancel',
@@ -109,6 +115,7 @@ const messages = {
       notAuthorized: 'Not authorized',
       notFound: 'Resource not found',
       serverError: 'Server error',
+      loadUsersFailed: 'Could not load users',
     },
     validation: {
       maxLength: 'Maximum {0} characters',
@@ -140,6 +147,12 @@ const messages = {
       send: 'Enviar',
       newConversation: 'Nueva Conversación',
       search: 'Buscar...',
+      searchUsers: 'Buscar usuarios...',
+      noUsersFound: 'No se encontraron usuarios',
+      noUsersAvailable: 'No hay usuarios disponibles',
+      online: 'En línea',
+      selected: 'Seleccionado',
+      startChat: 'Iniciar chat',
       startAudioRecording: 'Mantén presionado para grabar',
       stopAudioRecording: 'Suelta para enviar',
       cancelAudioRecording: 'Cancelar',
@@ -195,6 +208,7 @@ const messages = {
       notAuthorized: 'No autorizado',
       notFound: 'Recurso no encontrado',
       serverError: 'Error del servidor',
+      loadUsersFailed: 'No se pudieron cargar los usuarios',
     },
     validation: {
       maxLength: 'Máximo {0} caracteres',

@@ -64,13 +64,13 @@
         <template v-if="message.type === 'text' || message.type === 'transcription'">
           <div
             class="message-text"
-            :class="{ 'message-text-original': showOriginal && translatedText }"
+              :class="{ 'message-text-original': showOriginal && availableTranslation }"
             v-html="formattedText"
           />
           
           <!-- Traducción -->
           <div
-            v-if="showTranslation && translatedText"
+            v-if="showTranslationComputed && availableTranslation && (isCurrentUser || props.showOriginal)"
             class="message-translation"
           >
             <v-chip
@@ -81,7 +81,7 @@
             >
               {{ $t('chat.translated') }}
             </v-chip>
-            <p class="text-body-2">{{ translatedText }}</p>
+            <p class="text-body-2">{{ availableTranslation }}</p>
           </div>
           
           <!-- Botón para mostrar/ocultar traducción -->
@@ -122,10 +122,10 @@
               
               <!-- Traducción de la transcripción -->
               <div
-                v-if="showTranslation && translatedText"
+                v-if="showTranslationComputed && availableTranslation && (isCurrentUser || props.showOriginal)"
                 class="message-translation mt-1"
               >
-                <p class="text-body-2">{{ translatedText }}</p>
+                <p class="text-body-2">{{ availableTranslation }}</p>
               </div>
               
               <v-btn
@@ -293,7 +293,7 @@ const props = defineProps({
   },
   showOriginal: {
     type: Boolean,
-    default: true,
+    default: false,
   },
   showTranslation: {
     type: Boolean,
@@ -322,7 +322,6 @@ const emit = defineEmits([
   'copy',
   'play',
   'pause',
-  'translation-required',
 ]);
 
 // ============================================
@@ -356,7 +355,7 @@ const translatedText = ref('');
 const currentUserId = computed(() => authStore.user?.id);
 
 const isCurrentUser = computed(() => {
-  return props.message.sender_id === currentUserId.value;
+  return String(props.message.sender_id) === String(currentUserId.value);
 });
 
 const isSystemMessage = computed(() => {
@@ -401,7 +400,9 @@ const formattedTime = computed(() => {
 
 const formattedText = computed(() => {
   // Formatear enlaces
-  let text = props.message.content || '';
+  let text = !isCurrentUser.value && availableTranslation.value && !props.showOriginal
+    ? availableTranslation.value
+    : props.message.content || '';
   
   // Convertir URLs a enlaces clickeables
   text = text.replace(
@@ -414,6 +415,10 @@ const formattedText = computed(() => {
   
   return text;
 });
+
+const availableTranslation = computed(() =>
+  props.message.translated_content || translatedText.value
+);
 
 const bubbleStyle = computed(() => {
   const style = {};
@@ -448,7 +453,10 @@ const showTranslationComputed = computed(() => {
     return props.showTranslation;
   }
   // Si auto-translate está activado y hay traducción disponible
-  if (autoTranslateSetting.value && translatedText.value) {
+  if (!isCurrentUser.value && availableTranslation.value) {
+    return true;
+  }
+  if (autoTranslateSetting.value && availableTranslation.value) {
     return true;
   }
   // De lo contrario, usar el estado local
@@ -456,7 +464,8 @@ const showTranslationComputed = computed(() => {
 });
 
 const userPreferredLanguage = computed(() => {
-  return userStore.preferredLanguage || userStore.user?.preferred_language_id || 'es';
+  const preferredLanguageId = userStore.currentUser?.preferred_language_id || userStore.user?.preferred_language_id;
+  return translationStore.getLanguageById(preferredLanguageId)?.code || 'es';
 });
 
 // ============================================
@@ -479,21 +488,14 @@ const toggleTranslation = async () => {
     return;
   }
   
-  // Solicitar traducción
-  emit('translation-required', props.message);
-  
   try {
-    const textToTranslate = props.message.type === 'voice' 
-      ? props.message.transcription 
+    const textToTranslate = props.message.type === 'voice'
+      ? props.message.transcription || props.message.audio_transcription
       : props.message.content;
-    
     if (!textToTranslate) return;
-    
-    translatedText.value = await translationStore.translate(
-      textToTranslate,
-      props.message.language || userStore.nativeLanguage || 'es',
-      userPreferredLanguage.value
-    );
+
+    const result = await translationStore.translate(props.message, userPreferredLanguage.value);
+    translatedText.value = result.translatedText;
     
     showTranslationLocal.value = true;
   } catch (error) {

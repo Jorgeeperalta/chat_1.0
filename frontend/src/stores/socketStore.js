@@ -36,6 +36,7 @@ export const useSocketStore = defineStore('socket', () => {
   const socketId = ref('');
   const error = ref(null);
   const listeners = ref({});
+  const activeConversationId = ref(null);
   
   // ============================================
   // GETTERS
@@ -51,7 +52,7 @@ export const useSocketStore = defineStore('socket', () => {
    * Conecta al servidor Socket.io
    */
   const connect = () => {
-    if (isConnected.value || isConnecting.value) return;
+    if (isConnected.value || isConnecting.value) return socket.value;
     
     isConnecting.value = true;
     error.value = null;
@@ -60,7 +61,7 @@ export const useSocketStore = defineStore('socket', () => {
     
     if (!token) {
       isConnecting.value = false;
-      return;
+      return null;
     }
     
     try {
@@ -82,12 +83,49 @@ export const useSocketStore = defineStore('socket', () => {
       
       // Configurar escuchadores
       setupEventListeners();
+      return socket.value;
       
     } catch (err) {
       error.value = err;
       isConnecting.value = false;
       console.error('Error al crear socket:', err);
     }
+  };
+
+  const ensureConnected = async (timeoutMs = 10000) => {
+    if (isConnected.value) return;
+
+    const activeSocket = socket.value || connect();
+    if (!activeSocket) {
+      throw new Error('Inicia sesión para conectarte al chat');
+    }
+    if (isConnected.value) return;
+
+    await new Promise((resolve, reject) => {
+      let timeout;
+      const cleanup = () => {
+        clearTimeout(timeout);
+        activeSocket.off('connect', handleConnect);
+        activeSocket.off('connect_error', handleError);
+      };
+      const handleConnect = () => {
+        cleanup();
+        resolve();
+      };
+      const handleError = (error) => {
+        cleanup();
+        reject(error);
+      };
+
+      activeSocket.once('connect', handleConnect);
+      activeSocket.once('connect_error', handleError);
+      timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error('No se pudo conectar al servidor de chat'));
+      }, timeoutMs);
+
+      if (isConnected.value) handleConnect();
+    });
   };
 
   /**
@@ -102,6 +140,9 @@ export const useSocketStore = defineStore('socket', () => {
       socketId.value = socket.value.id;
       isConnecting.value = false;
       console.log(`✅ Socket conectado: ${socket.value.id}`);
+      if (activeConversationId.value !== null) {
+        socket.value.emit('join', { conversationId: activeConversationId.value });
+      }
     });
     
     // Evento: conexión perdida
@@ -129,6 +170,10 @@ export const useSocketStore = defineStore('socket', () => {
     socket.value.on('new_text_message', (data) => {
       chatStore.addTextMessage(data);
       conversationStore.handleNewMessage(data.conversationId, data.message);
+    });
+
+    socket.value.on('message_translation_updated', (data) => {
+      chatStore.updateMessageTranslation(data);
     });
     
     // Evento: nuevo mensaje de audio
@@ -212,16 +257,34 @@ export const useSocketStore = defineStore('socket', () => {
    * @returns {Promise<void>}
    */
   const joinConversation = async (conversationId) => {
-    if (!socket.value || !isConnected.value) {
-      await connect();
-      
-      // Esperar un tiempo para que la conexión se establezca
-      await new Promise(resolve => setTimeout(resolve, 500));
+    await ensureConnected();
+    const normalizedId = String(conversationId);
+    if (activeConversationId.value && activeConversationId.value !== normalizedId) {
+      socket.value.emit('leave', { conversationId: activeConversationId.value });
     }
-    
-    if (socket.value && isConnected.value) {
-      socket.value.emit('join', { conversationId });
-    }
+    activeConversationId.value = normalizedId;
+
+    const activeSocket = socket.value;
+    await new Promise((resolve, reject) => {
+      let timeout;
+      const cleanup = () => {
+        clearTimeout(timeout);
+      };
+      timeout = setTimeout(() => {
+        cleanup();
+        activeConversationId.value = null;
+        reject(new Error('El servidor no confirmó la unión a la conversación'));
+      }, 10000);
+      activeSocket.emit('join', { conversationId: normalizedId }, (response) => {
+        cleanup();
+        if (response?.error) {
+          activeConversationId.value = null;
+          reject(new Error(response.error));
+          return;
+        }
+        resolve(response);
+      });
+    });
   };
 
   /**
@@ -232,6 +295,9 @@ export const useSocketStore = defineStore('socket', () => {
     if (socket.value && isConnected.value) {
       socket.value.emit('leave', { conversationId });
     }
+    if (String(activeConversationId.value) === String(conversationId)) {
+      activeConversationId.value = null;
+    }
   };
 
   /**
@@ -239,18 +305,15 @@ export const useSocketStore = defineStore('socket', () => {
    * @param {Object} messageData - Datos del mensaje
    * @returns {Promise<void>}
    */
-  const sendTextMessage = (messageData) => {
-    if (socket.value && isConnected.value) {
-      socket.value.emit('text_message', messageData);
-    } else {
-      // Si no hay conexión, intentar conectar y luego enviar
-      connect();
-      setTimeout(() => {
-        if (socket.value && isConnected.value) {
-          socket.value.emit('text_message', messageData);
-        }
-      }, 1000);
-    }
+  const sendTextMessage = async (messageData) => {
+    await ensureConnected();
+    return new Promise((resolve, reject) => {
+      socket.value.timeout(15000).emit('text_message', messageData, (timeoutError, response) => {
+        if (timeoutError) return reject(new Error('El servidor no confirmó el envío del mensaje'));
+        if (response?.error) return reject(new Error(response.error));
+        resolve(response);
+      });
+    });
   };
 
   /**
@@ -258,17 +321,15 @@ export const useSocketStore = defineStore('socket', () => {
    * @param {Object} messageData - Datos del mensaje
    * @returns {Promise<void>}
    */
-  const sendAudioMessage = (messageData) => {
-    if (socket.value && isConnected.value) {
-      socket.value.emit('audio_message', messageData);
-    } else {
-      connect();
-      setTimeout(() => {
-        if (socket.value && isConnected.value) {
-          socket.value.emit('audio_message', messageData);
-        }
-      }, 1000);
-    }
+  const sendAudioMessage = async (messageData) => {
+    await ensureConnected();
+    return new Promise((resolve, reject) => {
+      socket.value.timeout(15000).emit('audio_message', messageData, (timeoutError, response) => {
+        if (timeoutError) return reject(new Error('El servidor no confirmó el envío del audio'));
+        if (response?.error) return reject(new Error(response.error));
+        resolve(response);
+      });
+    });
   };
 
   /**
@@ -343,6 +404,7 @@ export const useSocketStore = defineStore('socket', () => {
     isConnecting,
     socketId,
     error,
+    activeConversationId,
     
     // Getters
     getSocket,
@@ -351,6 +413,7 @@ export const useSocketStore = defineStore('socket', () => {
     connect,
     disconnect,
     reconnect,
+    ensureConnected,
     setupEventListeners,
     joinConversation,
     leaveConversation,

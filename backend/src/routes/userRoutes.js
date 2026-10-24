@@ -34,6 +34,41 @@ const upload = multer({
 });
 
 /**
+ * @route GET /api/users
+ * @description Lista usuarios activos para iniciar conversaciones
+ * @access Privado
+ */
+router.get('/', authMiddleware.verifyToken, async (req, res, next) => {
+  try {
+    const requestedLimit = Number.parseInt(req.query.limit, 10) || 100;
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
+    const users = await models.User.findAll({
+      where: { is_active: true },
+      attributes: [
+        'id',
+        'username',
+        'first_name',
+        'last_name',
+        'avatar_url',
+        'status',
+        'native_language_id',
+        'preferred_language_id',
+      ],
+      order: [['username', 'ASC']],
+      limit,
+    });
+
+    res.json({
+      success: true,
+      users: users.filter(user => user.id !== req.userId),
+    });
+  } catch (error) {
+    logger.error(`❌ Error al listar usuarios: ${error.message}`);
+    next(error);
+  }
+});
+
+/**
  * @route GET /api/users/search
  * @description Busca usuarios por nombre de usuario o email
  * @access Privado

@@ -65,6 +65,8 @@ if (models.Language) {
 
 // Relaciones de User
 if (models.User) {
+  models.User.belongsTo(models.Language, { foreignKey: 'native_language_id', as: 'nativeLanguage' });
+  models.User.belongsTo(models.Language, { foreignKey: 'preferred_language_id', as: 'preferredLanguage' });
   models.User.hasMany(models.Conversation, { foreignKey: 'created_by', as: 'createdConversations' });
   models.User.hasMany(models.UserConversation, { foreignKey: 'user_id', as: 'userConversations' });
   models.User.hasMany(models.Message, { foreignKey: 'sender_id', as: 'sentMessages' });

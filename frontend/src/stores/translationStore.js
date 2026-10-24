@@ -189,10 +189,21 @@ export const useTranslationStore = defineStore('translation', () => {
    * @param {string} targetLang - Idioma de destino
    * @returns {Promise<{translatedText: string, fromCache: boolean}>}
    */
-  const translate = async (text, sourceLang, targetLang) => {
+  const translate = async (message, targetLang) => {
     try {
+      const text = message.type === 'voice'
+        ? message.transcription || message.audio_transcription
+        : message.content;
+      if (!text || !message.id || !message.conversation_id) {
+        throw new Error('El mensaje no contiene datos suficientes para traducir');
+      }
+
+      if (!languages.value.length) await fetchLanguages();
+      const normalizedTarget = getLanguageCode(targetLang);
+      const sourceLang = message.originalLanguage?.code ||
+        getLanguageById.value(message.original_language_id)?.code || 'es';
       // Generar clave de cache
-      const cacheKey = `${sourceLang}_${targetLang}_${text}`;
+      const cacheKey = `${sourceLang}_${normalizedTarget}_${text}`;
       
       // Verificar cache
       if (preferences.value.autoTranslateMessages && translationCache.value[cacheKey]) {
@@ -203,15 +214,9 @@ export const useTranslationStore = defineStore('translation', () => {
       }
       
       // Llamar a la API del backend
-      const response = await api.post('/api/messages/translate', {
-        message_id: 0, // No aplicable para traducción directa
-        target_language_code: targetLang,
-      }, {
-        params: {
-          text,
-          sourceLang,
-          targetLang,
-        },
+      const response = await api.post(`/api/messages/${message.conversation_id}/translate`, {
+        message_id: message.id,
+        target_language_code: normalizedTarget,
       });
       
       const translatedText = response.data.translation.translatedText;
@@ -221,7 +226,7 @@ export const useTranslationStore = defineStore('translation', () => {
         translationCache.value[cacheKey] = {
           text,
           sourceLanguage: sourceLang,
-          targetLanguage: targetLang,
+          targetLanguage: normalizedTarget,
           translatedText,
           timestamp: new Date(),
         };

@@ -135,8 +135,8 @@ io.on('connection', (socket) => {
   logger.info(`✅ Conexión WebSocket establecida: ${socket.id}`);
 
   // Evento: nuevo usuario conectado
-  socket.on('join', async (data) => {
-    await socketMiddleware.handleJoin(socket, data);
+  socket.on('join', async (data, acknowledge) => {
+    await socketMiddleware.handleJoin(socket, data, acknowledge);
   });
 
   // Evento: usuario se desconecta de una conversación
@@ -145,18 +145,18 @@ io.on('connection', (socket) => {
   });
 
   // Evento: mensaje de texto
-  socket.on('text_message', async (data) => {
-    await socketMiddleware.handleTextMessage(socket, data, io);
+  socket.on('text_message', async (data, acknowledge) => {
+    await socketMiddleware.handleTextMessage(socket, data, io, acknowledge);
   });
 
   // Evento: mensaje de audio
-  socket.on('audio_message', async (data) => {
-    await socketMiddleware.handleAudioMessage(socket, data, io);
+  socket.on('audio_message', async (data, acknowledge) => {
+    await socketMiddleware.handleAudioMessage(socket, data, io, acknowledge);
   });
 
   // Evento: usuario está escribiendo
   socket.on('typing', (data) => {
-    socket.to(data.conversationId).emit('user_typing', {
+    socket.to(String(data.conversationId)).emit('user_typing', {
       userId: socket.userId,
       conversationId: data.conversationId,
       isTyping: data.isTyping,

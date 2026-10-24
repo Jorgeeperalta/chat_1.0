@@ -46,7 +46,7 @@ module.exports = (sequelize, DataTypes) => {
         validate: {
           notEmpty: true,
           len: [3, 50],
-          is: /^[a-zA-Z0-9_]+$/, // Solo letras, números y guiones bajos
+          is: /^[a-zA-Z0-9_-]+$/, // Solo letras, números, guiones y guiones bajos
         },
       },
       email: {
@@ -150,7 +150,7 @@ module.exports = (sequelize, DataTypes) => {
       updatedAt: 'updated_at',
       underscored: true,
       freezeTableName: true,
-      
+
       indexes: [
         {
           unique: true,
@@ -173,7 +173,7 @@ module.exports = (sequelize, DataTypes) => {
           fields: ['created_at'],
         },
       ],
-      
+
       hooks: {
         /**
          * Hash de la contraseña antes de crear/actualizar
@@ -185,7 +185,7 @@ module.exports = (sequelize, DataTypes) => {
             user.password_hash = await bcrypt.hash(user.password_hash, salt);
           }
         },
-        
+
         /**
          * Hash de la contraseña antes de actualizar
          * @param {User} user - Instancia del usuario

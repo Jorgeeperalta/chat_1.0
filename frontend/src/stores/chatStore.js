@@ -6,6 +6,7 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import api from '@/services/api';
 import { useAuthStore } from './authStore';
 import { useUserStore } from './userStore';
 import { useConversationStore } from './conversationStore';
@@ -175,14 +176,32 @@ export const useChatStore = defineStore('chat', () => {
       
       const response = await api.get(`/api/messages/${conversationId}`, { params });
       
-      const fetchedMessages = response.data.messages;
-      
-      // Procesar mensajes
-      messages.value = fetchedMessages;
-      messagesById.value = fetchedMessages.reduce((acc, msg) => {
-        acc[msg.id] = msg;
-        return acc;
-      }, {});
+      const fetchedMessages = response.data.messages.map(message =>
+        processMessage(message, Number(conversationId))
+      );
+
+      const conversationKey = Number(conversationId);
+      const otherConversationMessages = messages.value.filter(
+        message => Number(message.conversation_id) !== conversationKey
+      );
+      const mergedMessages = new Map();
+
+      fetchedMessages.forEach(message => mergedMessages.set(message.id ?? message.tempId, message));
+      messages.value
+        .filter(message => Number(message.conversation_id) === conversationKey)
+        .forEach(message => mergedMessages.set(message.id ?? message.tempId, message));
+
+      const conversationMessages = [...mergedMessages.values()].sort((left, right) =>
+        new Date(left.created_at) - new Date(right.created_at)
+      );
+      messages.value = [...otherConversationMessages, ...conversationMessages];
+      messagesById.value = {
+        ...messagesById.value,
+        ...conversationMessages.reduce((acc, message) => {
+          if (message.id != null) acc[message.id] = message;
+          return acc;
+        }, {}),
+      };
       
       // Marcar conversación como leída
       conversationStore.markAsRead(conversationId);
@@ -236,6 +255,7 @@ export const useChatStore = defineStore('chat', () => {
   const addTextMessage = (data) => {
     const message = data.message;
     const conversationId = data.conversationId;
+    const clientMessageId = data.clientMessageId;
     
     // Verificar si el mensaje ya existe
     if (messagesById.value[message.id]) return;
@@ -243,8 +263,13 @@ export const useChatStore = defineStore('chat', () => {
     // Procesar el mensaje
     const processedMessage = processMessage(message, conversationId);
     
-    // Agregar al array
-    messages.value.push(processedMessage);
+    const optimisticIndex = messages.value.findIndex(item => item.tempId === clientMessageId);
+    if (optimisticIndex === -1) {
+      messages.value.push(processedMessage);
+    } else {
+      messages.value.splice(optimisticIndex, 1, processedMessage);
+    }
+    pendingMessages.value = pendingMessages.value.filter(item => item.tempId !== clientMessageId);
     messagesById.value[message.id] = processedMessage;
     
     // Si es la conversación actual, descontrar no leídos
@@ -265,6 +290,7 @@ export const useChatStore = defineStore('chat', () => {
   const addAudioMessage = (data) => {
     const message = data.message;
     const conversationId = data.conversationId;
+    const clientMessageId = data.clientMessageId;
     
     // Verificar si el mensaje ya existe
     if (messagesById.value[message.id]) return;
@@ -272,8 +298,13 @@ export const useChatStore = defineStore('chat', () => {
     // Procesar el mensaje
     const processedMessage = processMessage(message, conversationId);
     
-    // Agregar al array
-    messages.value.push(processedMessage);
+    const optimisticIndex = messages.value.findIndex(item => item.tempId === clientMessageId);
+    if (optimisticIndex === -1) {
+      messages.value.push(processedMessage);
+    } else {
+      messages.value.splice(optimisticIndex, 1, processedMessage);
+    }
+    pendingMessages.value = pendingMessages.value.filter(item => item.tempId !== clientMessageId);
     messagesById.value[message.id] = processedMessage;
     
     // Si es la conversación actual, descontrar no leídos
@@ -290,6 +321,21 @@ export const useChatStore = defineStore('chat', () => {
     if (translationStore.preferences?.play_audio_automatically) {
       playAudio(message.audio_url);
     }
+  };
+
+  const updateMessageTranslation = (data) => {
+    const message = messagesById.value[data.messageId];
+    if (!message) return;
+
+    const updates = {
+      translated_content: data.translatedContent,
+      target_language_id: data.targetLanguageId,
+      translation_status: data.translationStatus,
+    };
+    Object.assign(message, updates);
+    messagesById.value[data.messageId] = message;
+    const index = messages.value.findIndex(item => item.id === data.messageId);
+    if (index !== -1) messages.value[index] = message;
   };
 
   /**
@@ -309,6 +355,9 @@ export const useChatStore = defineStore('chat', () => {
     return {
       ...message,
       conversation_id: conversationId,
+      type: message.type || (message.message_type === 'audio' ? 'voice' : message.message_type),
+      duration: message.duration ?? message.audio_duration,
+      transcription: message.transcription ?? message.audio_transcription,
       sender,
       originalLanguage,
       targetLanguage,
@@ -412,14 +461,9 @@ export const useChatStore = defineStore('chat', () => {
    * @param {Object} data - Datos del mensaje
    */
   const handleMessageSent = (data) => {
-    // Actualizar el mensaje pendiente
-    const pendingIndex = pendingMessages.value.findIndex(
-      pm => pm.tempId === data.messageId
+    pendingMessages.value = pendingMessages.value.filter(
+      message => message.tempId !== data.clientMessageId
     );
-    
-    if (pendingIndex !== -1) {
-      pendingMessages.value.splice(pendingIndex, 1);
-    }
   };
 
   /**
@@ -428,6 +472,7 @@ export const useChatStore = defineStore('chat', () => {
    * @returns {Promise<Message>}
    */
   const sendTextMessage = async (content) => {
+    let tempId;
     try {
       if (!currentConversationId.value) {
         throw new Error('No hay una conversación seleccionada');
@@ -438,11 +483,12 @@ export const useChatStore = defineStore('chat', () => {
       }
       
       // Crear mensaje temporal
-      const tempId = `temp_${Date.now()}`;
+      tempId = `temp_${Date.now()}`;
       const tempMessage = {
         tempId,
         conversation_id: currentConversationId.value,
         sender_id: authStore.user?.id,
+        type: 'text',
         message_type: 'text',
         content,
         created_at: new Date().toISOString(),
@@ -456,8 +502,9 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.push(tempMessage);
       
       // Enviar por Socket.io
-      socketStore.sendTextMessage({
+      await socketStore.sendTextMessage({
         conversationId: currentConversationId.value,
+        clientMessageId: tempId,
         content,
       });
       
@@ -466,6 +513,10 @@ export const useChatStore = defineStore('chat', () => {
       
       return tempMessage;
     } catch (err) {
+      if (tempId) {
+        messages.value = messages.value.filter(message => message.tempId !== tempId);
+        pendingMessages.value = pendingMessages.value.filter(message => message.tempId !== tempId);
+      }
       error.value = err;
       throw err;
     }
@@ -551,6 +602,7 @@ export const useChatStore = defineStore('chat', () => {
    * @returns {Promise<Message>}
    */
   const sendAudioMessage = async (audioBlob) => {
+    let tempId;
     try {
       if (!currentConversationId.value) {
         throw new Error('No hay una conversación seleccionada');
@@ -564,7 +616,7 @@ export const useChatStore = defineStore('chat', () => {
       const audioBase64 = await blobToBase64(audioBlob);
       
       // Crear mensaje temporal
-      const tempId = `temp_${Date.now()}`;
+      tempId = `temp_${Date.now()}`;
       const tempMessage = {
         tempId,
         conversation_id: currentConversationId.value,
@@ -582,8 +634,9 @@ export const useChatStore = defineStore('chat', () => {
       messages.value.push(tempMessage);
       
       // Enviar por Socket.io
-      socketStore.sendAudioMessage({
+      await socketStore.sendAudioMessage({
         conversationId: currentConversationId.value,
+        clientMessageId: tempId,
         audioBase64,
         duration: recordingDuration.value,
         mimeType: 'audio/webm',
@@ -594,6 +647,10 @@ export const useChatStore = defineStore('chat', () => {
       
       return tempMessage;
     } catch (err) {
+      if (tempId) {
+        messages.value = messages.value.filter(message => message.tempId !== tempId);
+        pendingMessages.value = pendingMessages.value.filter(message => message.tempId !== tempId);
+      }
       error.value = err;
       throw err;
     }
@@ -791,6 +848,7 @@ export const useChatStore = defineStore('chat', () => {
     loadMoreMessages,
     addTextMessage,
     addAudioMessage,
+    updateMessageTranslation,
     processMessage,
     formatMessageDate,
     handleNewTextMessage,

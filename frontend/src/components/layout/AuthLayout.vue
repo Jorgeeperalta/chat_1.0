@@ -5,7 +5,6 @@
  -->
 
 <template>
-  <v-app>
     <!-- Barra superior -->
     <v-app-bar
       app
@@ -131,7 +130,6 @@
         </v-col>
       </v-row>
     </v-footer>
-  </v-app>
 </template>
 
 <script setup>

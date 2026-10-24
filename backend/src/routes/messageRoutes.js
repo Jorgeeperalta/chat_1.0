@@ -465,7 +465,7 @@ router.post(
 
       // Traducir
       const result = await translationService.translate(
-        message.content,
+        message.content || message.audio_transcription,
         sourceLanguageCode,
         target_language_code,
         { useCache: true }
@@ -474,7 +474,7 @@ router.post(
       res.json({
         success: true,
         translation: {
-          originalText: message.content,
+          originalText: message.content || message.audio_transcription,
           translatedText: result.translatedText,
           sourceLanguage: sourceLanguageCode,
           targetLanguage: target_language_code,

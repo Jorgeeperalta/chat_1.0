@@ -6,12 +6,22 @@
 
 <template>
   <div class="conversation-view">
-    <!-- Esta vista se muestra dentro del AppLayout,
-         que ya tiene el header con la información de la conversación
-         y el MessageInput. Solo necesitamos mostrar los mensajes aquí. -->
-    
+    <header class="conversation-header">
+      <v-btn icon variant="text" :to="{ name: 'chat' }" aria-label="Volver a conversaciones">
+        <v-icon icon="mdi-arrow-left" />
+      </v-btn>
+      <div class="conversation-heading">
+        <h1>{{ conversationTitle }}</h1>
+        <span>{{ conversationSubtitle }}</span>
+      </div>
+    </header>
+
     <!-- Área de mensajes -->
-    <div class="messages-container">
+    <div ref="messagesContainer" class="messages-container">
+      <div v-if="!messages.length && !chatStore.isLoading" class="empty-messages">
+        <v-icon icon="mdi-message-text-outline" size="40" />
+        <p>{{ $t('chat.noMessages') }}</p>
+      </div>
       <!-- Mensajes -->
       <template v-for="(message, index) in messages" :key="message.id">
         <!-- Mensaje del sistema (fecha) -->
@@ -33,8 +43,8 @@
           v-else
           class="message-group"
           :class="{
-            'current-user': message.sender_id === currentUserId,
-            'other-user': message.sender_id !== currentUserId,
+            'current-user': String(message.sender_id) === String(currentUserId),
+            'other-user': String(message.sender_id) !== String(currentUserId),
             'first-in-group': !isSameSender(message, messages[index - 1]),
           }"
           :data-message-id="message.id"
@@ -47,32 +57,9 @@
             @react="handleReact"
             @delete="handleDelete"
             @click="handleMessageClick"
-            @translation-required="handleTranslationRequired"
           />
         </div>
       </template>
-
-      <!-- Mensajes en tiempo real (Socket.io) -->
-      <div
-        v-for="message in incomingMessages"
-        :key="`incoming-${message.id || Date.now()}`"
-        class="message-group"
-        :class="{
-          'current-user': message.sender_id === currentUserId,
-          'other-user': message.sender_id !== currentUserId,
-        }"
-      >
-        <MessageBubble
-          :message="message"
-          :compact="false"
-          :show-timestamp="true"
-          @reply="handleReply"
-          @react="handleReact"
-          @delete="handleDelete"
-          @click="handleMessageClick"
-          @translation-required="handleTranslationRequired"
-        />
-      </div>
 
       <!-- Indicador de que hay más mensajes -->
       <div
@@ -115,6 +102,15 @@
         />
       </div>
     </div>
+
+    <div class="message-composer">
+      <MessageInput
+        :placeholder="$t('chat.typeMessage')"
+        :loading="chatStore.isLoading"
+        @send="sendMessage"
+        @send:voice="sendVoiceMessage"
+      />
+    </div>
   </div>
 </template>
 
@@ -123,8 +119,10 @@ import { ref, computed, onMounted, onUnmounted, inject, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
+import { useConversationStore } from '@/stores/conversationStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useSocketStore } from '@/stores/socketStore';
+import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
 
 // ============================================
@@ -141,6 +139,7 @@ const snackbar = inject('snackbar');
 const route = useRoute();
 const authStore = useAuthStore();
 const userStore = useUserStore();
+const conversationStore = useConversationStore();
 const chatStore = useChatStore();
 const socketStore = useSocketStore();
 
@@ -158,17 +157,26 @@ const typingUser = ref('');
 // ============================================
 
 const currentUserId = computed(() => authStore.user?.id);
+const messagesContainer = ref(null);
 
 const conversationId = computed(() => {
   return route.params.conversationId;
 });
 
 const messages = computed(() => {
-  return chatStore.messages.filter(m => m.conversation_id === conversationId.value);
+  return chatStore.messages.filter(m => Number(m.conversation_id) === Number(conversationId.value));
 });
 
-const incomingMessages = computed(() => {
-  return chatStore.incomingMessages.filter(m => m.conversation_id === conversationId.value);
+const currentConversation = computed(() => conversationStore.conversationsById[conversationId.value]);
+
+const conversationTitle = computed(() => {
+  const otherUser = currentConversation.value?.users?.find(user => user.id !== currentUserId.value);
+  return currentConversation.value?.name || otherUser?.first_name || otherUser?.username || 'Conversación';
+});
+
+const conversationSubtitle = computed(() => {
+  const otherUser = currentConversation.value?.users?.find(user => user.id !== currentUserId.value);
+  return otherUser?.status === 'online' ? 'En línea' : otherUser?.username || '';
 });
 
 const hasMoreMessages = computed(() => {
@@ -247,24 +255,34 @@ const handleMessageClick = (event) => {
   console.log('Click en mensaje:', event);
 };
 
-const handleTranslationRequired = async (message) => {
-  try {
-    await chatStore.translateMessage(message);
-    snackbar?.show({ text: 'Mensaje traducido', color: 'success' });
-  } catch (error) {
-    console.error('Error al traducir:', error);
-    snackbar?.error('Error al traducir el mensaje');
-  }
-};
-
 const scrollToBottom = async () => {
   await nextTick();
-  const container = document.querySelector('.messages-container');
+  const container = messagesContainer.value;
   if (container) {
     container.scrollTo({
       top: container.scrollHeight,
       behavior: 'smooth',
     });
+  }
+};
+
+const sendMessage = async ({ content }) => {
+  try {
+    await chatStore.sendTextMessage(content);
+    scrollToBottom();
+  } catch (error) {
+    console.error('Error al enviar mensaje:', error);
+    snackbar?.error(error.message || 'No se pudo enviar el mensaje');
+  }
+};
+
+const sendVoiceMessage = async (audio) => {
+  try {
+    await chatStore.sendAudioMessage(audio);
+    scrollToBottom();
+  } catch (error) {
+    console.error('Error al enviar audio:', error);
+    snackbar?.error(error.message || 'No se pudo enviar el audio');
   }
 };
 
@@ -302,10 +320,21 @@ const getUserName = (user) => {
 // ============================================
 
 onMounted(async () => {
-  // Cargar mensajes de la conversación
   if (conversationId.value) {
-    await chatStore.fetchMessages({ conversation_id: conversationId.value });
-    scrollToBottom();
+    chatStore.currentConversationId = Number(conversationId.value);
+    try {
+      await socketStore.joinConversation(conversationId.value);
+    } catch (error) {
+      console.error('Error al conectar con el chat:', error);
+      snackbar?.error('Sin conexión al chat. Puedes escribir y volver a intentar enviar.');
+    }
+    try {
+      await chatStore.fetchMessages(conversationId.value);
+      scrollToBottom();
+    } catch (error) {
+      console.error('Error al cargar mensajes:', error);
+      snackbar?.error('No se pudieron cargar los mensajes');
+    }
   }
   
   // Configurar listeners de Socket.io
@@ -313,7 +342,7 @@ onMounted(async () => {
   
   // Marcar la conversación como leída
   if (conversationId.value) {
-    await chatStore.markAsRead(conversationId.value);
+    conversationStore.markAsRead(conversationId.value);
   }
 });
 
@@ -322,6 +351,10 @@ onMounted(async () => {
 // ============================================
 
 onUnmounted(() => {
+  if (conversationId.value) {
+    socketStore.leaveConversation(conversationId.value);
+  }
+
   // Limpiar listeners de Socket.io
   if (socketStore.socket) {
     socketStore.socket.off('user-typing');
@@ -342,18 +375,23 @@ watch(() => messages.value, (newMessages) => {
   }
 }, { deep: true });
 
-// Escuchar mensajes entrantes en tiempo real
-watch(() => incomingMessages.value, (newMessages) => {
-  if (newMessages.length > 0) {
-    scrollToBottom();
-  }
-});
-
 // Escuchar cambios en la conversación
 watch(() => conversationId.value, async (newId) => {
   if (newId) {
-    await chatStore.fetchMessages({ conversation_id: newId });
-    scrollToBottom();
+    chatStore.currentConversationId = Number(newId);
+    try {
+      await socketStore.joinConversation(newId);
+    } catch (error) {
+      console.error('Error al conectar con el chat:', error);
+      snackbar?.error('Sin conexión al chat. Puedes escribir y volver a intentar enviar.');
+    }
+    try {
+      await chatStore.fetchMessages(newId);
+      scrollToBottom();
+    } catch (error) {
+      console.error('Error al cargar mensajes:', error);
+      snackbar?.error('No se pudieron cargar los mensajes');
+    }
     setupSocketListeners();
   }
 });
@@ -363,15 +401,54 @@ watch(() => conversationId.value, async (newId) => {
 .conversation-view {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   height: 100%;
+
+  .conversation-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 64px;
+    padding: 8px 16px;
+    background: #fff;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+
+    .conversation-heading {
+      min-width: 0;
+
+      h1 {
+        overflow: hidden;
+        font-size: 1rem;
+        font-weight: 600;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      span {
+        color: #757575;
+        font-size: 0.8rem;
+      }
+    }
+  }
   
   .messages-container {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 16px;
     display: flex;
     flex-direction: column;
     gap: 4px;
+
+    .empty-messages {
+      display: grid;
+      flex: 1;
+      place-content: center;
+      justify-items: center;
+      gap: 8px;
+      color: #757575;
+    }
     
     // Scrollbar custom
     &::-webkit-scrollbar {
@@ -426,6 +503,13 @@ watch(() => conversationId.value, async (newId) => {
     .load-more-indicator {
       margin: 8px 0;
     }
+  }
+
+  .message-composer {
+    flex: 0 0 auto;
+    padding: 12px 16px;
+    background: #fff;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
   }
 }
 
