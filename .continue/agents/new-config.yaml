@@ -1,0 +1,17 @@
+- name: Codestral
+    provider: mistral
+    model: codestral-latest
+    apiKey: mstrl_Pgegk2ohkpG7BfyDMXKQXwuRDyY53EqS_3bogdl
+    roles:
+      - chat
+      - edit
+      - autocomplete
+      - apply
+
+  - name: Mistral Large
+    provider: mistral
+    model: mistral-large-latest
+    apiKey: mstrl_Pgegk2ohkpG7BfyDMXKQXwuRDyY53EqS_3bogdl
+    roles:
+      - chat
+      - edit
