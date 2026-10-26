@@ -8,8 +8,9 @@ const jwt = require('jsonwebtoken');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { models } = require('../models');
-const translationService = require('../services/translationService');
+const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
+const { userRoom } = require('../utils/socketRooms');
 
 // Extensión del archivo según el tipo MIME del audio grabado
 const AUDIO_EXTENSIONS = {
@@ -266,59 +267,15 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
 
     logger.info(`💬 Mensaje de texto enviado por ${socket.userId} en ${conversationId}`);
 
-    // Procesar traducciones para cada participante
-    for (const participant of participants) {
-      if (participant.user.id === socket.userId) continue; // Saltar el remitente
-
-      const targetLanguageId = participant.user.preferred_language_id || participant.user.native_language_id;
-      const targetLanguage = await models.Language.findByPk(targetLanguageId);
-
-      if (!targetLanguage) {
-        logger.warn(`⚠️ No se encontró idioma de destino para usuario ${participant.user.id}`);
-        continue;
-      }
-
-      if (originalLanguage?.id !== targetLanguage.id) {
-        // Traducir el mensaje
-        try {
-          const result = await translationService.translate(
-            content,
-            originalLanguageCode,
-            targetLanguage.code,
-            { useCache: true }
-          );
-
-          // Actualizar mensaje con traducción
-          if (result.translatedText) {
-            // En una implementación completa, se guardaría la traducción por receptor
-            // Por ahora, actualizamos el mensaje principal con la primera traducción
-            if (message.translated_content === null) {
-              await message.update({
-                translated_content: result.translatedText,
-                target_language_id: targetLanguage.id,
-                translation_status: 'completed',
-                mistral_model: result.model,
-                mistral_prompt_tokens: result.promptTokens,
-                mistral_completion_tokens: result.completionTokens,
-                mistral_response_time_ms: result.responseTimeMs,
-              });
-              logger.info(`🌐 Mensaje ${message.id} traducido a ${targetLanguage.code}`);
-              io.to(String(conversationId)).emit('message_translation_updated', {
-                messageId: message.id,
-                conversationId,
-                translatedContent: result.translatedText,
-                targetLanguageId: targetLanguage.id,
-                translationStatus: 'completed',
-              });
-            }
-          }
-        } catch (translationError) {
-          logger.warn(`⚠️ Error al traducir para usuario ${participant.user.id}:`, translationError.message);
-        }
-      } else {
-        logger.info(`ℹ️ No se requiere traducción del mensaje ${message.id}: idioma de destino ${targetLanguage.code} coincide con el origen`);
-      }
-    }
+    // Traducir una vez por idioma y entregar a cada receptor la traducción a su idioma
+    await messageTranslationService.translateForParticipants({
+      message,
+      content,
+      sourceLanguage: originalLanguage,
+      participants,
+      senderId: socket.userId,
+      io,
+    });
 
   } catch (error) {
     logger.error(`❌ Error al procesar mensaje de texto: ${error.message}`);
@@ -463,6 +420,12 @@ const handleMessageRead = async (socket, data, io) => {
       throw new Error('No eres miembro de esta conversación');
     }
 
+    // El mensaje debe pertenecer a la conversación indicada
+    const message = await models.Message.findByPk(messageId);
+    if (!message || String(message.conversation_id) !== String(conversationId)) {
+      throw new Error('El mensaje no pertenece a esta conversación');
+    }
+
     // Actualizar el último mensaje leído
     await models.UserConversation.updateLastReadMessage(
       socket.userId,
@@ -473,10 +436,9 @@ const handleMessageRead = async (socket, data, io) => {
     // Marcar el mensaje como leído
     await models.Message.markAsRead(messageId);
 
-    // Notificar al remitente
-    const message = await models.Message.findByPk(messageId);
-    if (message) {
-      socket.to(message.sender_id.toString()).emit('message_read_receipt', {
+    // Notificar al remitente en su sala personal (no confundir con la sala de una conversación)
+    if (message.sender_id !== socket.userId) {
+      io.to(userRoom(message.sender_id)).emit('message_read_receipt', {
         messageId,
         conversationId,
         readerId: socket.userId,

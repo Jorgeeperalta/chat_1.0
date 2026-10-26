@@ -11,6 +11,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { models } = require('../models');
 const logger = require('../utils/logger');
 const translationService = require('../services/translationService');
+const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
 const multer = require('multer');
 
@@ -59,6 +60,9 @@ router.get(
           afterId: after_id ? parseInt(after_id, 10) : null,
         }
       );
+
+      // Cada lector recibe la traducción a su propio idioma
+      await messageTranslationService.localizeMessagesForReader(messages, req.userId);
 
       // Marcar mensajes como entregados
       for (const message of messages) {
@@ -212,49 +216,24 @@ router.post(
           {
             model: models.User,
             as: 'user',
-            attributes: ['id', 'username', 'preferred_language_id'],
+            attributes: ['id', 'username', 'preferred_language_id', 'native_language_id'],
           },
         ],
       });
 
       // Procesar traducciones asíncronamente (no bloquear la respuesta)
-      setImmediate(async () => {
-        for (const participant of participants) {
-          if (participant.user.id === req.userId) continue;
-
-          const targetLanguageId = participant.user.preferred_language_id || participant.user.native_language_id;
-          const targetLanguage = await models.Language.findByPk(targetLanguageId);
-
-          if (!targetLanguage) continue;
-
-          if (sourceLanguage?.id !== targetLanguage.id) {
-            try {
-              const result = await translationService.translate(
-                content,
-                sourceLanguageCode,
-                targetLanguage.code,
-                { useCache: true }
-              );
-
-              if (result.translatedText) {
-                // Guardar traducción (en una implementación completa, se guardaría por receptor)
-                if (message.translated_content === null) {
-                  await message.update({
-                    translated_content: result.translatedText,
-                    target_language_id: targetLanguage.id,
-                    translation_status: 'completed',
-                    mistral_model: result.model,
-                    mistral_prompt_tokens: result.promptTokens,
-                    mistral_completion_tokens: result.completionTokens,
-                    mistral_response_time_ms: result.responseTimeMs,
-                  });
-                }
-              }
-            } catch (translationError) {
-              logger.warn(`⚠️ Error al traducir para usuario ${participant.user.id}:`, translationError.message);
-            }
-          }
-        }
+      const messageLanguage = original_language_id
+        ? await models.Language.findByPk(original_language_id)
+        : sourceLanguage;
+      setImmediate(() => {
+        messageTranslationService.translateForParticipants({
+          message,
+          content,
+          sourceLanguage: messageLanguage,
+          participants,
+          senderId: req.userId,
+          io: req.app.get('io'),
+        }).catch(error => logger.warn(`⚠️ Error al traducir el mensaje ${message.id}: ${error.message}`));
       });
 
       // Obtener el mensaje con detalles
@@ -324,8 +303,8 @@ router.post(
         mimetype
       );
 
-      // Transcripción (simplificada para demo)
-      const transcription = '[Transcripción no disponible en demo]';
+      // Todavía no hay servicio de transcripción: el audio se guarda sin texto (igual que por Socket.io)
+      const transcription = null;
       const transcriptionLanguageCode = language_code || 'es';
       const transcriptionLanguage = await models.Language.findByCode(transcriptionLanguageCode);
 
@@ -348,49 +327,24 @@ router.post(
           {
             model: models.User,
             as: 'user',
-            attributes: ['id', 'username', 'preferred_language_id'],
+            attributes: ['id', 'username', 'preferred_language_id', 'native_language_id'],
           },
         ],
       });
 
-      // Procesar traducciones asíncronamente
-      setImmediate(async () => {
-        for (const participant of participants) {
-          if (participant.user.id === req.userId) continue;
-
-          const targetLanguageId = participant.user.preferred_language_id || participant.user.native_language_id;
-          const targetLanguage = await models.Language.findByPk(targetLanguageId);
-
-          if (!targetLanguage) continue;
-
-          if (transcriptionLanguage?.id !== targetLanguage.id) {
-            try {
-              const result = await translationService.translate(
-                transcription,
-                transcriptionLanguageCode,
-                targetLanguage.code,
-                { useCache: true }
-              );
-
-              if (result.translatedText) {
-                if (message.translated_content === null) {
-                  await message.update({
-                    translated_content: result.translatedText,
-                    target_language_id: targetLanguage.id,
-                    translation_status: 'completed',
-                    mistral_model: result.model,
-                    mistral_prompt_tokens: result.promptTokens,
-                    mistral_completion_tokens: result.completionTokens,
-                    mistral_response_time_ms: result.responseTimeMs,
-                  });
-                }
-              }
-            } catch (translationError) {
-              logger.warn(`⚠️ Error al traducir audio para usuario ${participant.user.id}:`, translationError.message);
-            }
-          }
-        }
-      });
+      // Procesar traducciones asíncronamente (solo si hay transcripción que traducir)
+      if (transcription) {
+        setImmediate(() => {
+          messageTranslationService.translateForParticipants({
+            message,
+            content: transcription,
+            sourceLanguage: transcriptionLanguage,
+            participants,
+            senderId: req.userId,
+            io: req.app.get('io'),
+          }).catch(error => logger.warn(`⚠️ Error al traducir el audio ${message.id}: ${error.message}`));
+        });
+      }
 
       // Obtener el mensaje con detalles
       const fullMessage = await models.Message.findByIdWithDetails(message.id);
@@ -542,54 +496,28 @@ router.patch(
 
       // Re-traducir asíncronamente
       setImmediate(async () => {
-        const conversation = await models.Conversation.findByPk(message.conversation_id);
-        if (!conversation) return;
+        try {
+          const participants = await models.UserConversation.findAll({
+            where: { conversation_id: message.conversation_id },
+            include: [
+              {
+                model: models.User,
+                as: 'user',
+                attributes: ['id', 'preferred_language_id', 'native_language_id'],
+              },
+            ],
+          });
 
-        const participants = await models.UserConversation.findAll({
-          where: { conversation_id: conversation.id },
-          include: [
-            {
-              model: models.User,
-              as: 'user',
-              attributes: ['id', 'preferred_language_id'],
-            },
-          ],
-        });
-
-        for (const participant of participants) {
-          if (participant.user.id === req.userId) continue;
-
-          const targetLanguageId = participant.user.preferred_language_id || participant.user.native_language_id;
-          const targetLanguage = await models.Language.findByPk(targetLanguageId);
-
-          if (!targetLanguage) continue;
-
-          const sourceLanguageCode = message.originalLanguage?.code || 'es';
-
-          if (sourceLanguageCode !== targetLanguage.code) {
-            try {
-              const result = await translationService.translate(
-                content,
-                sourceLanguageCode,
-                targetLanguage.code,
-                { useCache: true }
-              );
-
-              if (result.translatedText) {
-                await message.update({
-                  translated_content: result.translatedText,
-                  target_language_id: targetLanguage.id,
-                  translation_status: 'completed',
-                  mistral_model: result.model,
-                  mistral_prompt_tokens: result.promptTokens,
-                  mistral_completion_tokens: result.completionTokens,
-                  mistral_response_time_ms: result.responseTimeMs,
-                });
-              }
-            } catch (translationError) {
-              logger.warn(`⚠️ Error al re-traducir mensaje:`, translationError.message);
-            }
-          }
+          await messageTranslationService.translateForParticipants({
+            message,
+            content,
+            sourceLanguage: await models.Language.findByPk(message.original_language_id),
+            participants,
+            senderId: req.userId,
+            io: req.app.get('io'),
+          });
+        } catch (error) {
+          logger.warn(`⚠️ Error al re-traducir el mensaje ${message.id}: ${error.message}`);
         }
       });
 
