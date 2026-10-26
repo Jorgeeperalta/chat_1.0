@@ -1,9 +1,3 @@
-node_modules/
-dist/
-.env
-.env.*
-!.env.production.example
-!.env.production
 # Dependencias de Node.js
 **/node_modules/
 
@@ -11,9 +5,16 @@ dist/
 .env
 .env.*
 !**/.env.example
+!**/.env.production.example
+# Solo URLs relativas, sin secretos (las claves nunca van en variables VITE_)
+!frontend/.env.production
 
-# Archivos de logs
+# Logs
 *.log
+logs/
+iisnode/
 
-# Archivos generados por Vite
+# Archivos generados
 /frontend/dist/
+# Paquete para el hosting: se genera con `node scripts/build-deploy.js`
+/deploy-hosting/

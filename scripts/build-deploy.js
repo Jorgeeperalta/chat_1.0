@@ -1,11 +1,11 @@
 /**
- * @file Empaquetado para el hosting (SmarterASP.NET / IIS + iisnode)
+ * @file Empaquetado para el hosting (SmarterASP.NET / IIS + HttpPlatformHandler)
  * @description Compila el frontend y arma la carpeta deploy-hosting/ lista para subir por FTP
  *
  * Uso (desde la raíz del repo):  node scripts/build-deploy.js
  *
  * Resultado (deploy-hosting/):
- *   web.config          configuración de IIS + iisnode
+ *   web.config          configuración de IIS + HttpPlatformHandler (copia de backend/web.config)
  *   .env                copia de backend/.env.production (si existe)
  *   package.json        dependencias del backend
  *   node_modules/       solo dependencias de producción
@@ -34,7 +34,21 @@ const copy = (from, to) => {
 };
 
 // 1. Compilar el frontend con .env.production (URLs relativas al mismo origen)
+if (!fs.existsSync(path.join(frontendDir, '.env.production'))) {
+  console.error('\n❌ Falta frontend/.env.production: sin él el build usa las URLs de desarrollo (localhost).');
+  process.exit(1);
+}
 run('npm run build', frontendDir);
+
+// El build no debe apuntar a localhost: en el navegador del usuario eso es "Network Error"
+const assetsDir = path.join(frontendDir, 'dist', 'assets');
+const withLocalhost = fs.readdirSync(assetsDir)
+  .filter(file => file.endsWith('.js'))
+  .filter(file => /https?:\/\/localhost:\d+/.test(fs.readFileSync(path.join(assetsDir, file), 'utf8')));
+if (withLocalhost.length > 0) {
+  console.error(`\n❌ El build apunta a localhost (${withLocalhost.join(', ')}). Revisa frontend/.env.production.`);
+  process.exit(1);
+}
 
 // 2. Carpeta de salida limpia
 fs.rmSync(outDir, { recursive: true, force: true });

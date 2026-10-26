@@ -14,6 +14,7 @@ const { Server } = require('socket.io');
 const rateLimit = require('express-rate-limit');
 const config = require('./config');
 const logger = require('./utils/logger');
+const { userRoom } = require('./utils/socketRooms');
 
 // Inicializar Sequelize y modelos
 const { sequelize, testConnection, sync } = require('./models');
@@ -49,6 +50,9 @@ const io = new Server(server, {
   pingInterval: config.socket.pingInterval,
   maxHttpBufferSize: config.socket.maxHttpBufferSize,
 });
+
+// Las rutas REST lo usan (req.app.get('io')) para avisar por Socket.io
+app.set('io', io);
 
 // ============================================
 // MIDDLEWARE GLOBAL
@@ -177,6 +181,9 @@ io.use(socketMiddleware.authenticateSocket);
 // Manejo de conexiones WebSocket
 io.on('connection', (socket) => {
   logger.info(`✅ Conexión WebSocket establecida: ${socket.id}`);
+
+  // Sala personal: avisos dirigidos a este usuario (p. ej. confirmaciones de lectura)
+  socket.join(userRoom(socket.userId));
 
   // Evento: nuevo usuario conectado
   socket.on('join', async (data, acknowledge) => {

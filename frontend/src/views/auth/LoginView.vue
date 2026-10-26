@@ -209,6 +209,9 @@ const passwordRules = computed(() => [
 // ============================================
 
 const handleLogin = async () => {
+  // Enter dentro del formulario lo envía (type="submit"); evitar dobles envíos
+  if (loading.value) return;
+
   try {
     // Validar formulario
     const { valid } = await loginForm.value?.validate();
@@ -236,26 +239,6 @@ const handleLogin = async () => {
     loading.value = false;
   }
 };
-
-const handleKeyPress = (event) => {
-  if (event.key === 'Enter' && isValid.value && !loading.value) {
-    handleLogin();
-  }
-};
-
-// ============================================
-// MONTAJE
-// ============================================
-
-import { onMounted, onUnmounted } from 'vue';
-
-onMounted(() => {
-  window.addEventListener('keypress', handleKeyPress);
-});
-
-onUnmounted(() => {
-  window.removeEventListener('keypress', handleKeyPress);
-});
 </script>
 
 <style lang="scss" scoped>
