@@ -6,7 +6,8 @@
 
 const express = require('express');
 const router = express.Router();
-const { body, validationResult, param } = require('express-validator');
+const { Op } = require('sequelize');
+const { body, validationResult, param, query } = require('express-validator');
 const authMiddleware = require('../middleware/authMiddleware');
 const { models } = require('../models');
 const logger = require('../utils/logger');
@@ -33,52 +34,54 @@ const upload = multer({
   },
 });
 
+// Datos públicos de un usuario (nunca email, password_hash ni datos internos)
+const PUBLIC_USER_ATTRIBUTES = [
+  'id',
+  'username',
+  'first_name',
+  'last_name',
+  'avatar_url',
+  'status',
+  'last_seen_at',
+  'native_language_id',
+  'preferred_language_id',
+];
+
 /**
  * @route GET /api/users
- * @description Lista usuarios activos para iniciar conversaciones
+ * @description Agenda del usuario: solo sus contactos (con quienes comparte algún chat).
+ * No lista a todos los usuarios de la app.
  * @access Privado
  */
 router.get('/', authMiddleware.verifyToken, async (req, res, next) => {
   try {
-    const requestedLimit = Number.parseInt(req.query.limit, 10) || 100;
-    const limit = Math.min(Math.max(requestedLimit, 1), 100);
-    const users = await models.User.findAll({
-      where: { is_active: true },
-      attributes: [
-        'id',
-        'username',
-        'first_name',
-        'last_name',
-        'avatar_url',
-        'status',
-        'native_language_id',
-        'preferred_language_id',
-      ],
+    const contactIds = await models.UserConversation.findContactIds(req.userId);
+    const users = contactIds.length === 0 ? [] : await models.User.findAll({
+      where: { id: { [Op.in]: contactIds }, is_active: true },
+      attributes: PUBLIC_USER_ATTRIBUTES,
       order: [['username', 'ASC']],
-      limit,
     });
 
-    res.json({
-      success: true,
-      users: users.filter(user => user.id !== req.userId),
-    });
+    res.json({ success: true, users });
   } catch (error) {
-    logger.error(`❌ Error al listar usuarios: ${error.message}`);
+    logger.error(`❌ Error al listar contactos: ${error.message}`);
     next(error);
   }
 });
 
 /**
- * @route GET /api/users/search
- * @description Busca usuarios por nombre de usuario o email
+ * @route GET /api/users/search?username=ana
+ * @description Busca un usuario por su nombre de usuario EXACTO, para agregarlo a la agenda.
+ * Coincidencia exacta a propósito: no permite recorrer la lista de usuarios de la app.
  * @access Privado
  */
 router.get(
   '/search',
   authMiddleware.verifyToken,
   [
-    body('query').trim().notEmpty().withMessage('La consulta de búsqueda es obligatoria'),
-    body('limit').optional().isInt({ min: 1, max: 50 }).withMessage('El límite debe ser entre 1 y 50'),
+    query('username')
+      .customSanitizer(value => String(value || '').trim().replace(/^@/, ''))
+      .isLength({ min: 3, max: 50 }).withMessage('El nombre de usuario debe tener entre 3 y 50 caracteres'),
   ],
   async (req, res, next) => {
     try {
@@ -90,18 +93,23 @@ router.get(
         });
       }
 
-      const { query, limit = 10 } = req.query;
+      const user = await models.User.findOne({
+        where: {
+          username: req.query.username,
+          is_active: true,
+          id: { [Op.ne]: req.userId },
+        },
+        attributes: PUBLIC_USER_ATTRIBUTES,
+      });
 
-      // Excluir al usuario actual de los resultados
-      const users = await models.User.search(query, limit);
-      const filteredUsers = users.filter(user => user.id !== req.userId);
+      const contactIds = user ? await models.UserConversation.findContactIds(req.userId) : [];
 
       res.json({
         success: true,
-        users: filteredUsers,
+        user: user ? { ...user.toJSON(), is_contact: contactIds.includes(user.id) } : null,
       });
     } catch (error) {
-      logger.error(`❌ Error al buscar usuarios: ${error.message}`);
+      logger.error(`❌ Error al buscar usuario: ${error.message}`);
       next(error);
     }
   }
@@ -127,6 +135,17 @@ router.get(
       }
 
       const { userId } = req.params;
+
+      // Solo uno mismo o sus contactos: no se puede consultar a cualquier usuario por id
+      if (Number(userId) !== Number(req.userId)) {
+        const contactIds = await models.UserConversation.findContactIds(req.userId);
+        if (!contactIds.includes(Number(userId))) {
+          return res.status(404).json({
+            error: 'Not Found',
+            message: 'Usuario no encontrado',
+          });
+        }
+      }
 
       const user = await models.User.findByPk(userId, {
         attributes: { exclude: ['password_hash', 'email'] },

@@ -31,7 +31,7 @@ import { useThemeStore } from './stores/themeStore';
 const messages = {
   en: {
     app: {
-      name: 'Chat Translate',
+      name: 'Converxa',
       description: 'Real-time chat with AI translation',
     },
     auth: {
@@ -71,6 +71,12 @@ const messages = {
       newConversation: 'New Conversation',
       search: 'Search...',
       searchUsers: 'Search users...',
+      searchByUsername: 'Search by username',
+      usernameHint: 'To add someone new, type their full username',
+      contacts: 'Your contacts',
+      newContact: 'New contact',
+      noContacts: "You don't have any contacts yet. Search for someone by username to start chatting.",
+      userNotFound: "There is no user {'@'}{username}",
       noUsersFound: 'No users found',
       noUsersAvailable: 'No users available',
       online: 'Online',
@@ -83,6 +89,23 @@ const messages = {
       translations: 'Translations',
       original: 'Original',
       translated: 'Translated',
+      chat: 'Chats',
+      chats: 'Chats',
+      noMessages: 'No messages',
+      noConversations: "You don't have any chats yet",
+      startNewConversation: 'Start a chat',
+      offline: 'Offline',
+      lastSeen: 'Last seen {time}',
+      participants: '{n} participants',
+      onlineCount: '{n} online',
+      typing: 'typing…',
+      backToChats: 'Back to chats',
+      showTranslation: 'Show translation',
+      transcription: 'Transcription',
+      loadMoreMessages: 'Load earlier messages',
+      attachFile: 'Attach file',
+      emoji: 'Emoji',
+      searchEmoji: 'Search emoji',
     },
     common: {
       loading: 'Loading...',
@@ -97,9 +120,18 @@ const messages = {
       back: 'Back',
       next: 'Next',
       previous: 'Previous',
+      recent: 'Recent',
       continue: 'Continue',
       home: 'Home',
       or: 'or',
+    },
+    pwa: {
+      installPrompt: 'Install the app for quick access from your home screen',
+      installIos: 'To install: tap Share and then "Add to Home Screen"',
+      install: 'Install',
+      later: 'Later',
+      updateAvailable: 'A new version is available',
+      update: 'Update',
     },
     settings: {
       title: 'Settings',
@@ -143,7 +175,7 @@ const messages = {
   },
   es: {
     app: {
-      name: 'Chat con Traducción',
+      name: 'Converxa',
       description: 'Chat en tiempo real con traducción por IA',
     },
     auth: {
@@ -183,6 +215,12 @@ const messages = {
       newConversation: 'Nueva Conversación',
       search: 'Buscar...',
       searchUsers: 'Buscar usuarios...',
+      searchByUsername: 'Buscar por nombre de usuario',
+      usernameHint: 'Para agregar a alguien nuevo, escribe su nombre de usuario completo',
+      contacts: 'Tus contactos',
+      newContact: 'Nuevo contacto',
+      noContacts: 'Todavía no tienes contactos. Busca a alguien por su nombre de usuario para empezar a chatear.',
+      userNotFound: "No existe ningún usuario {'@'}{username}",
       noUsersFound: 'No se encontraron usuarios',
       noUsersAvailable: 'No hay usuarios disponibles',
       online: 'En línea',
@@ -195,6 +233,23 @@ const messages = {
       translations: 'Traducciones',
       original: 'Original',
       translated: 'Traducido',
+      chat: 'Chats',
+      chats: 'Chats',
+      noMessages: 'Sin mensajes',
+      noConversations: 'Todavía no tienes chats',
+      startNewConversation: 'Iniciar un chat',
+      offline: 'Desconectado',
+      lastSeen: 'Últ. vez {time}',
+      participants: '{n} participantes',
+      onlineCount: '{n} en línea',
+      typing: 'escribiendo…',
+      backToChats: 'Volver a los chats',
+      showTranslation: 'Ver traducción',
+      transcription: 'Transcripción',
+      loadMoreMessages: 'Cargar mensajes anteriores',
+      attachFile: 'Adjuntar archivo',
+      emoji: 'Emoji',
+      searchEmoji: 'Buscar emoji',
     },
     common: {
       loading: 'Cargando...',
@@ -209,9 +264,18 @@ const messages = {
       back: 'Atrás',
       next: 'Siguiente',
       previous: 'Anterior',
+      recent: 'Recientes',
       continue: 'Continuar',
       home: 'Inicio',
       or: 'o',
+    },
+    pwa: {
+      installPrompt: 'Instala la app para abrirla desde tu pantalla de inicio',
+      installIos: 'Para instalarla: toca Compartir y luego "Agregar a inicio"',
+      install: 'Instalar',
+      later: 'Más tarde',
+      updateAvailable: 'Hay una versión nueva disponible',
+      update: 'Actualizar',
     },
     settings: {
       title: 'Configuración',
@@ -255,7 +319,7 @@ const messages = {
   },
   fr: {
     app: {
-      name: 'Chat avec Traduction',
+      name: 'Converxa',
       description: 'Chat en temps réel avec traduction IA',
     },
     auth: {
@@ -277,7 +341,7 @@ const messages = {
   },
   de: {
     app: {
-      name: 'Chat mit Übersetzung',
+      name: 'Converxa',
       description: 'Echtzeit-Chat mit KI-Übersetzung',
     },
     // ... (otras traducciones para alemán)

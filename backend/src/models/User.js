@@ -278,29 +278,5 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
-  /**
-   * Busca usuarios por nombre de usuario o email
-   * @param {string} query - Término de búsqueda
-   * @param {number} limit - Límite de resultados
-   * @returns {Promise<User[]>}
-   */
-  User.search = async function (query, limit = 10) {
-    return this.findAll({
-      where: {
-        is_active: true,
-        [sequelize.Op.or]: [
-          { username: { [sequelize.Op.iLike]: `%${query}%` } },
-          { email: { [sequelize.Op.iLike]: `%${query}%` } },
-          { first_name: { [sequelize.Op.iLike]: `%${query}%` } },
-          { last_name: { [sequelize.Op.iLike]: `%${query}%` } },
-        ],
-      },
-      limit,
-      order: [
-        [sequelize.fn('LEVENSHTEIN', sequelize.col('username'), query), 'ASC'],
-      ],
-    });
-  };
-
   return User;
 };

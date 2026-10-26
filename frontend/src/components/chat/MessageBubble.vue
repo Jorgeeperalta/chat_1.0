@@ -440,6 +440,8 @@ const canTranslate = computed(() => {
   // No se puede traducir mensajes del sistema o mensajes vacíos
   if (isSystemMessage.value) return false;
   if (!props.message.content && !props.message.transcription) return false;
+  // Los mensajes propios ya están en el idioma del usuario
+  if (isCurrentUser.value) return false;
   return true;
 });
 

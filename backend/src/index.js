@@ -150,7 +150,16 @@ if (require('fs').existsSync(frontendIndex)) {
   // Los assets llevan hash en el nombre: se pueden cachear mucho tiempo
   // fallthrough: false -> un asset inexistente da 404 en vez de devolver index.html
   app.use('/assets', express.static(path.join(frontendDir, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false }));
-  app.use(express.static(frontendDir, { index: false }));
+  // PWA: el service worker y el manifiesto se revalidan siempre, si no las versiones nuevas tardan en llegar
+  const noCacheFiles = new Set(['sw.js', 'registerSW.js', 'manifest.webmanifest']);
+  app.use(express.static(frontendDir, {
+    index: false,
+    setHeaders: (res, filePath) => {
+      if (noCacheFiles.has(path.basename(filePath))) {
+        res.setHeader('Cache-Control', 'no-cache');
+      }
+    },
+  }));
 
   // Rutas del SPA (vue-router con history): cualquier GET que no sea API devuelve index.html
   app.get(/^\/(?!api\/|uploads\/|socket\.io\/|health$).*/, (req, res) => {
@@ -184,6 +193,9 @@ io.on('connection', (socket) => {
 
   // Sala personal: avisos dirigidos a este usuario (p. ej. confirmaciones de lectura)
   socket.join(userRoom(socket.userId));
+
+  // En línea mientras tenga al menos un socket conectado (ver handleDisconnect)
+  socketMiddleware.handleConnect(socket, io);
 
   // Evento: nuevo usuario conectado
   socket.on('join', async (data, acknowledge) => {
@@ -245,6 +257,20 @@ const startServer = async () => {
   if (!dbConnected) {
     logger.error('❌ No se pudo conectar a la base de datos. Saliendo...');
     process.exit(1);
+  }
+
+  // Tras un reinicio no queda ningún socket conectado: nadie está en línea hasta que reconecte.
+  // Solo en producción: en desarrollo la base puede ser la misma y "desconectaría" a usuarios reales.
+  if (!config.isDevelopment) {
+    try {
+      const [count] = await sequelize.models.User.update(
+        { status: 'offline' },
+        { where: { status: 'online' } }
+      );
+      if (count > 0) logger.info(`🔌 ${count} usuario(s) marcados como desconectados al iniciar`);
+    } catch (error) {
+      logger.error('⚠️ No se pudo reiniciar el estado en línea:', error.message);
+    }
   }
 
   // Crear tablas faltantes en desarrollo; los cambios de esquema se aplican mediante migraciones.

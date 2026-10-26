@@ -6,22 +6,23 @@
 
 <template>
     <!-- Navbar superior -->
+    <!-- En el celular, dentro de un chat manda el encabezado de la conversación (con su flecha) -->
     <v-app-bar
       app
+      :model-value="!(isMobile && currentRoute.name === 'conversation')"
       :elevation="appBarElevation"
       color="primary"
       density="comfortable"
     >
-      <!-- Botón para abrir el menú lateral (mobile) -->
+      <!-- Botón para abrir/cerrar el menú lateral (arranca cerrado, también en escritorio) -->
       <v-app-bar-nav-icon
-        v-if="isMobile"
         variant="text"
         color="white"
         @click="drawer = !drawer"
       />
 
       <!-- Logo -->
-      <v-toolbar-title class="text-white font-weight-bold">
+      <v-toolbar-title class="text-white font-weight-bold flex-shrink-0">
         <router-link :to="{ name: 'home' }" class="text-white text-decoration-none">
           {{ $t('app.name') }}
         </router-link>
@@ -38,9 +39,18 @@
       >
         <template v-slot:activator="{ props: menuProps }">
           <v-btn
+            v-if="isMobile"
             v-bind="menuProps"
             variant="text"
-            :prepend-icon="currentLanguageIcon"
+            icon="mdi-translate"
+            color="white"
+            :aria-label="currentLanguageName"
+          />
+          <v-btn
+            v-else
+            v-bind="menuProps"
+            variant="text"
+            prepend-icon="mdi-translate"
             class="text-white"
           >
             {{ currentLanguageName }}
@@ -53,16 +63,17 @@
             :value="lang.value"
             @click="changeLanguage(lang.value)"
           >
-            <template v-slot:prepend>
-              <v-icon :icon="lang.icon" />
-            </template>
             <v-list-item-title>{{ lang.text }}</v-list-item-title>
+            <template v-if="lang.value === currentLanguage" v-slot:append>
+              <v-icon icon="mdi-check" color="primary" size="small" />
+            </template>
           </v-list-item>
         </v-list>
       </v-menu>
 
-      <!-- Botón de notificaciones -->
+      <!-- Botón de notificaciones (en el celular no entra en la barra) -->
       <v-btn
+        v-if="!isMobile"
         variant="text"
         icon
         color="white"
@@ -84,7 +95,7 @@
         variant="text"
         icon
         color="white"
-        class="ml-2"
+        :class="{ 'ml-2': !isMobile }"
         :to="{ name: 'settings' }"
       >
         <v-icon icon="mdi-cog" />
@@ -97,10 +108,12 @@
         transition="scale-transition"
       >
         <template v-slot:activator="{ props: menuProps }">
+          <!-- En el celular solo el avatar (botón redondo) para que entre la barra -->
           <v-btn
             v-bind="menuProps"
             variant="text"
-            class="ml-2"
+            :icon="isMobile"
+            :class="{ 'ml-2': !isMobile }"
           >
             <v-avatar
               v-if="currentUser?.avatar_url"
@@ -220,16 +233,34 @@
           v-for="conversation in recentConversations"
           :key="conversation.id"
           :to="{ name: 'conversation', params: { conversationId: conversation.id } }"
-          :active="currentRoute.name === 'conversation' && currentRoute.params.conversationId === conversation.id"
-          :prepend-avatar="conversation.user?.avatar_url || getAvatarUrl(conversation.user)"
+          :active="currentRoute.name === 'conversation' && String(currentRoute.params.conversationId) === String(conversation.id)"
           lines="two"
           class="mt-1"
         >
+          <template v-slot:prepend>
+            <v-badge
+              :model-value="conversation.type !== 'group'"
+              dot
+              bordered
+              location="bottom end"
+              offset-x="3"
+              offset-y="3"
+              :color="getOtherUser(conversation, currentUser?.id)?.status === 'online' ? 'success' : 'grey-lighten-1'"
+              class="mr-3"
+            >
+              <v-avatar size="36" :color="getConversationAvatar(conversation) ? undefined : 'primary'">
+                <v-img v-if="getConversationAvatar(conversation)" :src="getConversationAvatar(conversation)" cover />
+                <span v-else class="text-white text-caption font-weight-bold">
+                  {{ getInitials(getConversationTitle(conversation, currentUser?.id)) }}
+                </span>
+              </v-avatar>
+            </v-badge>
+          </template>
           <v-list-item-title>
-            {{ conversation.user?.first_name }} {{ conversation.user?.last_name }}
+            {{ getConversationTitle(conversation, currentUser?.id) }}
           </v-list-item-title>
           <v-list-item-subtitle>
-            <span v-if="conversation.last_message">{{ truncateMessage(conversation.last_message.content) }}</span>
+            <span v-if="lastMessageText(conversation)">{{ truncateMessage(lastMessageText(conversation)) }}</span>
             <span v-else class="text-grey">{{ $t('chat.noMessages') }}</span>
           </v-list-item-subtitle>
           <template v-slot:append>
@@ -241,7 +272,7 @@
             >
               {{ conversation.unread_count }}
             </v-chip>
-            <span class="text-caption text-grey">{{ formatTime(conversation.updated_at) }}</span>
+            <span class="text-caption text-grey">{{ formatTime(conversation.last_message_at || conversation.updated_at) }}</span>
           </template>
         </v-list-item>
       </v-list>
@@ -287,6 +318,7 @@ import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
+import { getOtherUser, getConversationTitle, getInitials } from '@/utils/conversationDisplay';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useUserStore } from '@/stores/userStore';
 import api from '@/services/api';
@@ -382,11 +414,6 @@ const currentLanguageName = computed(() => {
   return lang ? lang.text : 'Español';
 });
 
-const currentLanguageIcon = computed(() => {
-  const lang = availableLanguages.value.find(l => l.value === currentLanguage.value);
-  return lang ? lang.icon : 'mdi-flag-outline-es';
-});
-
 // ============================================
 // MÉTODOS
 // ============================================
@@ -422,10 +449,15 @@ const logout = async () => {
   }
 };
 
-const getAvatarUrl = (user) => {
-  if (!user) return '';
-  if (user.avatar_url) return user.avatar_url;
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.first_name + ' ' + user.last_name)}&background=random`;
+// Foto del grupo o del otro participante; sin foto se muestran iniciales
+const getConversationAvatar = (conversation) => {
+  if (conversation.type === 'group') return conversation.avatar_url || '';
+  return getOtherUser(conversation, currentUser.value?.id)?.avatar_url || '';
+};
+
+const lastMessageText = (conversation) => {
+  const message = conversation.lastMessage || conversation.last_message;
+  return message?.content || '';
 };
 
 const truncateMessage = (message) => {

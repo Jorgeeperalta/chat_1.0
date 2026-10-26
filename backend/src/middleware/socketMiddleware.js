@@ -474,6 +474,41 @@ const handleMessageDelivered = async (socket, data) => {
 };
 
 /**
+ * Avisa el estado de un usuario a todos sus contactos (quienes comparten alguna
+ * conversación con él), en su sala personal: les llega aunque no tengan ese chat abierto.
+ * @param {Object} io - Instancia de Socket.io
+ * @param {number} userId - Usuario cuyo estado cambió
+ * @param {string} status - online | offline | away | busy
+ * @param {Date} [lastSeenAt]
+ */
+const broadcastUserStatus = async (io, userId, status, lastSeenAt = new Date()) => {
+  const contactIds = await models.UserConversation.findContactIds(userId);
+
+  const payload = { userId, status, lastSeenAt: lastSeenAt.toISOString() };
+  for (const contactId of contactIds) {
+    io.to(userRoom(contactId)).emit('user_status_changed', payload);
+  }
+};
+
+/**
+ * Maneja una conexión nueva: el usuario pasa a estar en línea
+ * @param {Object} socket - Socket autenticado
+ * @param {Object} io - Instancia de Socket.io
+ */
+const handleConnect = async (socket, io) => {
+  try {
+    const lastSeenAt = new Date();
+    await models.User.update(
+      { status: 'online', last_seen_at: lastSeenAt },
+      { where: { id: socket.userId } }
+    );
+    await broadcastUserStatus(io, socket.userId, 'online', lastSeenAt);
+  } catch (error) {
+    logger.error(`❌ Error al marcar en línea al usuario ${socket.userId}: ${error.message}`);
+  }
+};
+
+/**
  * Maneja el evento 'disconnect' (desconexión del socket)
  * @param {Object} socket - Socket
  * @param {Object} io - Instancia de Socket.io
@@ -482,31 +517,22 @@ const handleDisconnect = async (socket, io) => {
   try {
     logger.info(`⚡ Socket desconectado: ${socket.id} (User: ${socket.userId || 'N/A'})`);
 
-    // Actualizar estado del usuario a offline
     if (socket.userId) {
-      await models.User.update(
-        { status: 'offline', last_seen_at: new Date() },
-        { where: { id: socket.userId } }
-      );
-
       // Eliminar la sesión
       if (socket.sessionId) {
         await models.UserSession.expireSession(socket.sessionId);
       }
 
-      // Notificar a todos los contactos del usuario
-      const conversations = await models.Conversation.findUserConversations(
-        socket.userId,
-        { limit: 100 }
-      );
+      // Si le queda otra pestaña/dispositivo conectado, sigue en línea
+      const remaining = await io.in(userRoom(socket.userId)).fetchSockets();
+      if (remaining.length > 0) return;
 
-      for (const conversation of conversations.conversations) {
-        io.to(conversation.id.toString()).emit('user_status_changed', {
-          userId: socket.userId,
-          status: 'offline',
-          lastSeenAt: new Date().toISOString(),
-        });
-      }
+      const lastSeenAt = new Date();
+      await models.User.update(
+        { status: 'offline', last_seen_at: lastSeenAt },
+        { where: { id: socket.userId } }
+      );
+      await broadcastUserStatus(io, socket.userId, 'offline', lastSeenAt);
     }
   } catch (error) {
     logger.error(`❌ Error al manejar desconexión: ${error.message}`, {
@@ -538,23 +564,14 @@ const handleUserStatusChanged = async (socket, data, io) => {
     }
 
     // Actualizar estado del usuario
+    const lastSeenAt = new Date();
     await models.User.update(
-      { status },
+      { status, last_seen_at: lastSeenAt },
       { where: { id: socket.userId } }
     );
 
     // Notificar a todos los contactos
-    const conversations = await models.Conversation.findUserConversations(
-      socket.userId,
-      { limit: 100 }
-    );
-
-    for (const conversation of conversations.conversations) {
-      socket.to(conversation.id.toString()).emit('user_status_changed', {
-        userId: socket.userId,
-        status,
-      });
-    }
+    await broadcastUserStatus(io, socket.userId, status, lastSeenAt);
 
     logger.info(`🔄 Usuario ${socket.userId} cambió estado a ${status}`);
   } catch (error) {
@@ -587,6 +604,7 @@ const getOnlineUsersInConversation = async (conversationId) => {
 
 module.exports = {
   authenticateSocket,
+  handleConnect,
   handleJoin,
   handleLeave,
   handleTextMessage,

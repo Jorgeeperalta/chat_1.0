@@ -7,15 +7,32 @@
 <template>
   <div class="conversation-view">
     <header class="conversation-header">
-      <v-btn icon variant="text" :to="{ name: 'chat' }" aria-label="Volver a conversaciones">
-        <v-icon icon="mdi-arrow-left" />
-      </v-btn>
-      <v-avatar color="primary" size="40">
-        <span class="text-white font-weight-bold">{{ conversationInitials }}</span>
-      </v-avatar>
+      <!-- Vuelve a la lista de chats (la ruta 'chat' es solo un contenedor vacío) -->
+      <v-btn
+        icon="mdi-arrow-left"
+        variant="text"
+        density="comfortable"
+        :to="{ name: 'home' }"
+        :aria-label="$t('chat.backToChats')"
+      />
+      <v-badge
+        :model-value="!isGroup"
+        dot
+        bordered
+        location="bottom end"
+        offset-x="3"
+        offset-y="3"
+        :color="isOtherOnline ? 'success' : 'grey-lighten-1'"
+      >
+        <v-avatar :color="conversationAvatar ? undefined : 'primary'" size="40">
+          <v-img v-if="conversationAvatar" :src="conversationAvatar" cover />
+          <v-icon v-else-if="isGroup" icon="mdi-account-group" color="white" />
+          <span v-else class="text-white font-weight-bold">{{ conversationInitials }}</span>
+        </v-avatar>
+      </v-badge>
       <div class="conversation-heading">
         <h1>{{ conversationTitle }}</h1>
-        <span>{{ conversationSubtitle }}</span>
+        <span :class="{ 'is-online': isOtherOnline || isTyping }">{{ conversationSubtitle }}</span>
       </div>
     </header>
 
@@ -126,8 +143,15 @@ import { useUserStore } from '@/stores/userStore';
 import { useConversationStore } from '@/stores/conversationStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useSocketStore } from '@/stores/socketStore';
+import { useI18n } from 'vue-i18n';
 import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
+import {
+  getOtherUser,
+  getConversationTitle,
+  getInitials,
+  formatRelativeTime,
+} from '@/utils/conversationDisplay';
 
 // ============================================
 // INJECT
@@ -141,6 +165,7 @@ const snackbar = inject('snackbar');
 // ============================================
 
 const route = useRoute();
+const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 const conversationStore = useConversationStore();
@@ -173,23 +198,40 @@ const messages = computed(() => {
 
 const currentConversation = computed(() => conversationStore.conversationsById[conversationId.value]);
 
-const conversationTitle = computed(() => {
-  const otherUser = currentConversation.value?.users?.find(user => user.id !== currentUserId.value);
-  return currentConversation.value?.name || otherUser?.first_name || otherUser?.username || 'Conversación';
-});
+const isGroup = computed(() => currentConversation.value?.type === 'group');
 
-const conversationInitials = computed(() => {
-  return (conversationTitle.value || '?')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map(word => word.charAt(0).toUpperCase())
-    .join('');
-});
+const otherUser = computed(() => getOtherUser(currentConversation.value, currentUserId.value));
+
+const conversationTitle = computed(() =>
+  currentConversation.value ? getConversationTitle(currentConversation.value, currentUserId.value) : t('chat.chat')
+);
+
+const conversationInitials = computed(() => getInitials(conversationTitle.value));
+
+const conversationAvatar = computed(() =>
+  isGroup.value ? currentConversation.value?.avatar_url : otherUser.value?.avatar_url
+);
+
+const isOtherOnline = computed(() => !isGroup.value && otherUser.value?.status === 'online');
+
+// "Últ. vez hace X" debe avanzar aunque no lleguen eventos
+const now = ref(Date.now());
+const clock = setInterval(() => { now.value = Date.now(); }, 60 * 1000);
 
 const conversationSubtitle = computed(() => {
-  const otherUser = currentConversation.value?.users?.find(user => user.id !== currentUserId.value);
-  return otherUser?.status === 'online' ? 'En línea' : otherUser?.username || '';
+  if (isTyping.value) return t('chat.typing');
+  if (isGroup.value) {
+    const members = currentConversation.value?.users || [];
+    const online = members.filter(u => Number(u.id) !== Number(currentUserId.value) && u.status === 'online').length;
+    return online > 0
+      ? `${t('chat.participants', { n: members.length })} · ${t('chat.onlineCount', { n: online })}`
+      : t('chat.participants', { n: members.length });
+  }
+  const user = otherUser.value;
+  if (!user) return '';
+  if (user.status === 'online') return t('chat.online');
+  if (!user.last_seen_at) return t('chat.offline');
+  return t('chat.lastSeen', { time: formatRelativeTime(user.last_seen_at, locale.value, now.value) });
 });
 
 const hasMoreMessages = computed(() => {
@@ -393,6 +435,7 @@ onMounted(async () => {
 // ============================================
 
 onUnmounted(() => {
+  clearInterval(clock);
   stopTyping();
   if (conversationId.value) {
     socketStore.leaveConversation(conversationId.value);
@@ -455,6 +498,8 @@ watch(() => conversationId.value, async (newId, oldId) => {
     gap: 12px;
     min-height: 64px;
     padding: 8px 16px;
+    // En el celular la barra de la app se oculta en el chat: respetar el notch / barra de estado
+    padding-top: max(8px, env(safe-area-inset-top));
     background-color: var(--app-surface);
     border-bottom: 1px solid var(--app-border);
     box-shadow: var(--app-shadow-sm);
@@ -462,6 +507,7 @@ watch(() => conversationId.value, async (newId, oldId) => {
 
     .conversation-heading {
       display: flex;
+      flex: 1 1 auto;
       flex-direction: column;
       min-width: 0;
 
@@ -477,9 +523,27 @@ watch(() => conversationId.value, async (newId, oldId) => {
       }
 
       span {
+        overflow: hidden;
         color: var(--app-text-muted);
         font-size: 0.8rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+
+        &.is-online {
+          color: rgb(var(--v-theme-success));
+          font-weight: 500;
+        }
       }
+    }
+  }
+
+  // Celular: menos relleno para que entre el nombre
+  @media (max-width: 599px) {
+    .conversation-header {
+      gap: 8px;
+      min-height: 56px;
+      padding-left: 4px;
+      padding-right: 12px;
     }
   }
 

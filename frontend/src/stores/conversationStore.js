@@ -242,9 +242,9 @@ export const useConversationStore = defineStore('conversation', () => {
       
       // Verificar si ya existe una conversación privada
       const existing = conversations.value.find(c => {
-        return c.type === 'private' && 
-               c.users?.some(u => u.id === userId) &&
-               c.users?.some(u => u.id === authStore.user?.id);
+        return c.type === 'private' &&
+               c.users?.some(u => Number(u.id) === Number(userId)) &&
+               c.users?.some(u => Number(u.id) === Number(authStore.user?.id));
       });
       
       if (existing) {
@@ -391,7 +391,7 @@ export const useConversationStore = defineStore('conversation', () => {
     // Actualizar estado en todas las conversaciones
     conversations.value.forEach(conversation => {
       if (conversation.users) {
-        const user = conversation.users.find(u => u.id === data.userId);
+        const user = conversation.users.find(u => Number(u.id) === Number(data.userId));
         if (user) {
           user.status = data.status;
           if (data.lastSeenAt) {
