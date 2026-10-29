@@ -1,7 +1,6 @@
 <!--
  * @file NewConversationView.vue
- * @description Nuevo chat: la agenda del usuario (sus contactos) y búsqueda por nombre de usuario
- * para agregar a alguien nuevo. No se listan todos los usuarios de la app.
+ * @description Nuevo chat: solo búsqueda por nombre de usuario, sin listar contactos.
  -->
 
 <template>
@@ -36,8 +35,11 @@
     </div>
 
     <div class="nc-body">
-      <!-- Usuario encontrado que todavía no está en la agenda -->
-      <template v-if="foundUser">
+      <div v-if="searching" class="text-center py-4">
+        <v-progress-circular color="primary" indeterminate size="24" />
+      </div>
+
+      <template v-else-if="foundUser">
         <v-list-subheader>{{ $t('chat.newContact') }}</v-list-subheader>
         <v-list-item lines="two" class="nc-user nc-user--found" @click="startChat(foundUser)">
           <template v-slot:prepend>
@@ -53,56 +55,18 @@
         </v-list-item>
       </template>
 
-      <!-- Buscando / no existe -->
-      <div v-else-if="searching" class="text-center py-4">
-        <v-progress-circular color="primary" indeterminate size="24" />
-      </div>
       <p
-        v-else-if="notFoundUsername && filteredContacts.length === 0"
+        v-else-if="notFoundUsername"
         class="text-body-2 text-medium-emphasis text-center py-6 px-4"
       >
         {{ $t('chat.userNotFound', { username: notFoundUsername }) }}
       </p>
 
-      <!-- Agenda: contactos con los que ya chateó -->
-      <template v-if="filteredContacts.length > 0">
-        <v-list-subheader>{{ $t('chat.contacts') }}</v-list-subheader>
-        <v-list-item
-          v-for="user in filteredContacts"
-          :key="user.id"
-          lines="two"
-          class="nc-user"
-          @click="startChat(user)"
-        >
-          <template v-slot:prepend>
-            <UserAvatar :user="user" show-status />
-          </template>
-          <v-list-item-title class="font-weight-medium">{{ displayName(user) }}</v-list-item-title>
-          <v-list-item-subtitle>
-            @{{ user.username }}
-            <span class="mx-1">·</span>
-            <span :class="{ 'text-success font-weight-medium': user.status === 'online' }">
-              {{ user.status === 'online' ? $t('chat.online') : $t('chat.offline') }}
-            </span>
-          </v-list-item-subtitle>
-          <template v-if="startingId === user.id" v-slot:append>
-            <v-progress-circular color="primary" indeterminate size="20" />
-          </template>
-        </v-list-item>
-      </template>
-
-      <!-- Cargando la agenda -->
-      <div v-if="loadingContacts" class="text-center py-6">
-        <v-progress-circular color="primary" indeterminate />
-      </div>
-
-      <!-- Agenda vacía -->
-      <div
-        v-else-if="contacts.length === 0 && !searchQuery"
-        class="nc-empty text-center py-10 px-6"
-      >
+      <div v-else class="nc-empty text-center py-10 px-6">
         <v-icon icon="mdi-account-search" size="48" color="grey" />
-        <p class="text-body-1 text-medium-emphasis mt-3 mb-0">{{ $t('chat.noContacts') }}</p>
+        <p class="text-body-1 text-medium-emphasis mt-3 mb-0">
+          {{ $t('chat.searchByUsername') }}
+        </p>
       </div>
     </div>
 
@@ -121,7 +85,7 @@ import api from '@/services/api';
 import { useConversationStore } from '@/stores/conversationStore';
 import { getUserDisplayName, getInitials } from '@/utils/conversationDisplay';
 
-// Mismo formato que la sanitización del backend (GET /api/users/search)
+// Mismo formato que la validación del backend (POST /api/users/search).
 const MIN_USERNAME_LENGTH = 3;
 const LOOKUP_DELAY_MS = 400;
 
@@ -130,8 +94,6 @@ const { t } = useI18n();
 const conversationStore = useConversationStore();
 
 const searchQuery = ref('');
-const contacts = ref([]);
-const loadingContacts = ref(false);
 const foundUser = ref(null);
 const notFoundUsername = ref('');
 const searching = ref(false);
@@ -168,43 +130,38 @@ const normalizedQuery = computed(() =>
   (searchQuery.value || '').trim().replace(/^@/, '').toLowerCase()
 );
 
-// Solo se busca por nombre de usuario
-const filteredContacts = computed(() => {
-  const q = normalizedQuery.value;
-  if (!q) return contacts.value;
-  return contacts.value.filter(user => user.username?.toLowerCase().includes(q));
-});
-
 const displayName = (user) => getUserDisplayName(user) || user.username;
 
-const fetchContacts = async () => {
-  loadingContacts.value = true;
-  try {
-    const { data } = await api.get('/api/users');
-    contacts.value = data.users || [];
-  } catch (error) {
-    console.error('Error al cargar contactos:', error);
-    showError(t('errors.loadUsersFailed'));
-  } finally {
-    loadingContacts.value = false;
-  }
-};
-
-// Busca el usuario exacto en el servidor (solo si no es ya un contacto)
+// Busca el usuario exacto en el servidor para iniciar una conversación.
 const lookupUser = async (username) => {
   const seq = ++lookupSeq;
   searching.value = true;
   try {
-    const { data } = await api.get('/api/users/search', { params: { username } });
+    let response;
+    try {
+      response = await api.post('/api/users/search', { query: username });
+    } catch (error) {
+      // Compatibilidad temporal con backends que todavía exponen solo GET.
+      // Una vez todos los entornos estén actualizados, puede quitarse este fallback.
+      if (error?.response?.status !== 404) throw error;
+      response = await api.get('/api/users/search', { params: { username } });
+    }
+    const { data } = response;
     if (seq !== lookupSeq) return; // llegó una búsqueda más nueva
-    const user = data.user;
-    if (user && !user.is_contact) {
-      foundUser.value = user;
-    } else if (!user) {
+
+    if (data.user) {
+      foundUser.value = data.user;
+      notFoundUsername.value = '';
+    } else {
+      foundUser.value = null;
       notFoundUsername.value = username;
     }
   } catch (error) {
-    if (seq === lookupSeq) console.error('Error al buscar usuario:', error);
+    if (seq === lookupSeq) {
+      console.error('Error al buscar usuario:', error);
+      foundUser.value = null;
+      notFoundUsername.value = username;
+    }
   } finally {
     if (seq === lookupSeq) searching.value = false;
   }
@@ -220,8 +177,11 @@ const resetLookup = () => {
 
 const lookupNow = () => {
   const username = normalizedQuery.value;
-  if (username.length < MIN_USERNAME_LENGTH) return;
-  if (contacts.value.some(user => user.username?.toLowerCase() === username)) return;
+  if (username.length < MIN_USERNAME_LENGTH) {
+    resetLookup();
+    return;
+  }
+
   clearTimeout(lookupTimer);
   lookupUser(username);
 };
@@ -258,11 +218,10 @@ const goBack = () => {
 };
 
 onMounted(async () => {
-  // La lista de chats sirve para reusar un chat existente en vez de duplicarlo
+  // La lista de chats sirve para reusar un chat existente en vez de duplicarlo.
   if (conversationStore.conversations.length === 0) {
     conversationStore.fetchConversations().catch(() => {});
   }
-  await fetchContacts();
 });
 
 onUnmounted(() => {

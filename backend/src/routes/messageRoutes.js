@@ -61,9 +61,6 @@ router.get(
         }
       );
 
-      // Cada lector recibe la traducción a su propio idioma
-      await messageTranslationService.localizeMessagesForReader(messages, req.userId);
-
       // Marcar mensajes como entregados
       for (const message of messages) {
         if (message.sender_id !== req.userId && !message.is_delivered) {
@@ -644,7 +641,7 @@ router.post(
 
       // Implementación de reacciones (simplificada)
       // En una implementación completa, se crearía una tabla de reacciones
-      
+
       res.json({
         success: true,
         message: 'Reacción agregada correctamente',
