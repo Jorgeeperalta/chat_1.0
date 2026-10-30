@@ -200,7 +200,7 @@ const handleLeave = async (socket, data) => {
  */
 const handleTextMessage = async (socket, data, io, acknowledge) => {
   try {
-    const { conversationId, content, languageCode, clientMessageId } = data;
+    const { conversationId, content, languageCode, clientMessageId, replyToMessageId } = data;
 
     if (!conversationId || !content) {
       throw new Error('conversationId y content son requeridos');
@@ -216,6 +216,8 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
       throw new Error('No eres miembro de esta conversación');
     }
 
+    const replyTo = await models.Message.resolveReplyTo(replyToMessageId, conversationId);
+
     // Obtener el idioma nativo del usuario
     const user = await models.User.findByPk(socket.userId, {
       include: [{ model: models.Language, as: 'nativeLanguage' }],
@@ -230,6 +232,7 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
       senderId: socket.userId,
       content,
       originalLanguageId: originalLanguage?.id,
+      replyToMessageId: replyTo,
       translationStatus: 'pending',
     });
 
@@ -292,7 +295,7 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
  */
 const handleAudioMessage = async (socket, data, io, acknowledge) => {
   try {
-    const { conversationId, audioBase64, duration, languageCode, clientMessageId } = data;
+    const { conversationId, audioBase64, duration, languageCode, clientMessageId, replyToMessageId } = data;
 
     if (!conversationId || !audioBase64) {
       throw new Error('conversationId y audioBase64 son requeridos');
@@ -307,6 +310,8 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
     if (!isMember) {
       throw new Error('No eres miembro de esta conversación');
     }
+
+    const replyTo = await models.Message.resolveReplyTo(replyToMessageId, conversationId);
 
     // Decodificar el audio base64
     const audioBuffer = Buffer.from(audioBase64, 'base64');
@@ -339,6 +344,7 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
       audioTranscription: null,
       audioTranscriptionLanguageId: transcriptionLanguage?.id,
       originalLanguageId: transcriptionLanguage?.id,
+      replyToMessageId: replyTo,
     });
 
     // Obtener los participantes

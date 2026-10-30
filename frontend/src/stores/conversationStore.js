@@ -346,6 +346,18 @@ export const useConversationStore = defineStore('conversation', () => {
   };
 
   /**
+   * Un mensaje se editó o eliminó: si es el último del chat, actualizar la vista previa
+   * @param {number} conversationId - ID de la conversación
+   * @param {Object} message - Mensaje (o los campos que cambiaron, con su id)
+   */
+  const handleMessageChanged = (conversationId, message) => {
+    const lastMessage = conversationsById.value[conversationId]?.lastMessage;
+    if (lastMessage && Number(lastMessage.id) === Number(message.id)) {
+      updateConversation(conversationId, { lastMessage: { ...lastMessage, ...message } });
+    }
+  };
+
+  /**
    * Maneja un usuario que se unió a una conversación
    * @param {Object} data - Datos del evento
    */
@@ -566,6 +578,7 @@ export const useConversationStore = defineStore('conversation', () => {
     clearCurrentConversation,
     updateConversation,
     handleNewMessage,
+    handleMessageChanged,
     handleUserJoined,
     handleUserLeft,
     handleUserStatusChanged,

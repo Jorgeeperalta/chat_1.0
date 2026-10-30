@@ -9,6 +9,15 @@
       <!-- Encabezado -->
       <div class="home-header">
         <h1 class="text-h5 font-weight-bold">{{ $t('chat.chats') }}</h1>
+        <v-spacer />
+        <v-btn
+          variant="text"
+          icon="mdi-account-multiple-plus"
+          class="mr-1"
+          :aria-label="$t('chat.newGroup')"
+          :title="$t('chat.newGroup')"
+          :to="{ name: 'new-conversation', query: { mode: 'group' } }"
+        />
         <v-btn
           color="primary"
           variant="tonal"

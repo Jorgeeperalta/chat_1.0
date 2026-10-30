@@ -113,6 +113,7 @@ if (models.Message) {
   models.Message.belongsTo(models.Language, { foreignKey: 'target_language_id', as: 'targetLanguage' });
   models.Message.belongsTo(models.Language, { foreignKey: 'audio_transcription_language_id', as: 'transcriptionLanguage' });
   models.Message.hasMany(models.MessageAttachment, { foreignKey: 'message_id', as: 'attachments' });
+  models.Message.belongsTo(models.Message, { foreignKey: 'reply_to_message_id', as: 'replyTo', constraints: false });
 }
 
 // Relaciones de MessageAttachment
@@ -153,6 +154,34 @@ const sync = async (options = {}) => {
   }
 };
 
+/**
+ * Aplica los cambios de esquema que el código necesita y que una base existente puede no tener
+ * (equivale a migrations/002_reply_to_message.sql). Es idempotente: si ya están, no hace nada.
+ * Así basta con subir el código al hosting, sin correr SQL a mano.
+ */
+const ensureSchema = async () => {
+  const queryInterface = sequelize.getQueryInterface();
+  const messageColumns = await queryInterface.describeTable('messages');
+
+  if (!messageColumns.reply_to_message_id) {
+    await queryInterface.addColumn('messages', 'reply_to_message_id', {
+      type: Sequelize.DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      after: 'audio_transcription_language_id',
+    });
+    await queryInterface.addIndex('messages', ['reply_to_message_id'], {
+      name: 'idx_reply_to_message_id',
+    });
+
+    // Antes no se podía editar desde la app, pero guardar la traducción marcaba el
+    // mensaje como editado: esas marcas son falsas. Se limpian una sola vez, junto con
+    // esta migración (si la columna ya existía, no se vuelve a ejecutar).
+    await sequelize.query('UPDATE messages SET is_edited = FALSE WHERE is_edited = TRUE');
+    console.log('✅ Columna messages.reply_to_message_id creada');
+  }
+};
+
 // Verificar conexión
 const testConnection = async () => {
   try {
@@ -179,6 +208,7 @@ module.exports = {
   sequelize,
   models,
   sync,
+  ensureSchema,
   testConnection,
   closeConnection,
   ...models,

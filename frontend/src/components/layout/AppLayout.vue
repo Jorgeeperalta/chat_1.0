@@ -334,7 +334,7 @@ const authStore = useAuthStore();
 const conversationStore = useConversationStore();
 const translationStore = useTranslationStore();
 const userStore = useUserStore();
-const { locale } = useI18n();
+const { locale, t } = useI18n();
 
 // ============================================
 // INJECT
@@ -457,7 +457,10 @@ const getConversationAvatar = (conversation) => {
 
 const lastMessageText = (conversation) => {
   const message = conversation.lastMessage || conversation.last_message;
-  return message?.content || '';
+  if (!message) return '';
+  if (message.is_deleted) return `🚫 ${t('chat.messageDeleted')}`;
+  if (message.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
+  return message.content || '';
 };
 
 const truncateMessage = (message) => {

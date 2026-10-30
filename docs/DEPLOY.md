@@ -39,6 +39,12 @@ Subir **el contenido** de `deploy-hosting/` a `www\whatsapp` por FTP o con el *F
 - **Actualizaciones**: alcanza con subir `src/`, `public/` y, si cambió, `package.json` junto con `node_modules/`. Después hay que reciclar el sitio (*Recycle App Pool* en el panel). Si solo cambió `public/`, no hace falta reciclar.
 - **`.env` de producción**: vive solo en el servidor. Si `backend/.env.production` no existe, el script no genera `.env`. En ese caso no hay que borrar el `.env` del servidor al subir.
 
+### Cambios de base de datos
+
+Al arrancar, la app agrega sola las columnas nuevas que necesita (`ensureSchema` en `backend/src/models/index.js`). Por ejemplo, la versión con respuestas a mensajes crea `messages.reply_to_message_id`. No hay que correr SQL a mano.
+
+Si el usuario de la base no tuviera permiso de `ALTER`, Node no arranca y `log.txt` (o `logs/app.log`) lo indica. En ese caso, ejecutar `migrations/002_reply_to_message.sql` desde phpMyAdmin y reciclar el sitio.
+
 ## 4. Verificar
 
 - `http://jorgeperalta-001-site4.itempurl.com/health` debe responder `{"status":"ok", "database":"connected", ...}`.

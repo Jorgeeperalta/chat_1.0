@@ -17,7 +17,7 @@ const logger = require('./utils/logger');
 const { userRoom } = require('./utils/socketRooms');
 
 // Inicializar Sequelize y modelos
-const { sequelize, testConnection, sync } = require('./models');
+const { sequelize, testConnection, sync, ensureSchema } = require('./models');
 
 // Importar rutas
 const authRoutes = require('./routes/authRoutes');
@@ -281,6 +281,16 @@ const startServer = async () => {
     } catch (error) {
       logger.error('⚠️ Error al sincronizar modelos:', error.message);
     }
+  }
+
+  // Columnas nuevas que el código necesita (p. ej. respuestas a mensajes).
+  // Sin ellas fallan todas las consultas de mensajes, así que no se arranca.
+  try {
+    await ensureSchema();
+  } catch (error) {
+    logger.error(`❌ No se pudo actualizar el esquema de la base de datos: ${error.message}`);
+    logger.error('   Ejecuta migrations/002_reply_to_message.sql a mano (phpMyAdmin) y reinicia.');
+    process.exit(1);
   }
 
   // Iniciar servidor

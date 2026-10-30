@@ -203,7 +203,7 @@ module.exports = (sequelize, DataTypes) => {
       {
         model: models.UserConversation,
         as: 'participants',
-        where: { user_id: userId },
+        where: { user_id: userId, left_at: null },
         attributes: ['user_id'],
         required: true,
       },
@@ -223,7 +223,7 @@ module.exports = (sequelize, DataTypes) => {
       {
         model: models.Message,
         as: 'lastMessage',
-        attributes: ['id', 'message_type', 'content', 'created_at', 'sender_id'],
+        attributes: ['id', 'message_type', 'content', 'created_at', 'sender_id', 'is_deleted'],
         include: [
           {
             model: models.User,

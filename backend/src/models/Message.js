@@ -29,6 +29,7 @@ const { DataTypes } = require('sequelize');
  * @property {boolean} is_deleted - Si el mensaje fue eliminado
  * @property {boolean} is_delivered - Si el mensaje fue entregado
  * @property {boolean} is_read - Si el mensaje fue leído
+ * @property {number} reply_to_message_id - ID del mensaje al que responde
  */
 
 /**
@@ -147,6 +148,12 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: null,
         field: 'mistral_response_time_ms',
       },
+      reply_to_message_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        field: 'reply_to_message_id',
+      },
       is_edited: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
@@ -219,11 +226,12 @@ module.exports = (sequelize, DataTypes) => {
       
       hooks: {
         /**
-         * Marcar como editado si el contenido cambia
+         * Marcar como editado si el contenido cambia.
+         * La traducción no cuenta: se guarda después de enviar y no es una edición.
          * @param {Message} message - Instancia del mensaje
          */
         beforeUpdate: (message) => {
-          if (message.changed('content') || message.changed('translated_content')) {
+          if (message.changed('content') && !message.is_deleted) {
             message.is_edited = true;
           }
         },
@@ -253,6 +261,44 @@ module.exports = (sequelize, DataTypes) => {
     );
   };
 
+  /**
+   * Include del mensaje citado (respuesta): solo lo necesario para mostrar la cita
+   * @returns {Object}
+   */
+  Message.replyToInclude = function () {
+    const { models } = require('./index');
+    return {
+      model: Message,
+      as: 'replyTo',
+      attributes: ['id', 'sender_id', 'message_type', 'content', 'audio_duration', 'is_deleted'],
+      include: [
+        {
+          model: models.User,
+          as: 'sender',
+          attributes: ['id', 'username', 'first_name', 'last_name'],
+        },
+      ],
+    };
+  };
+
+  /**
+   * Valida que el mensaje citado exista y sea de la misma conversación
+   * @param {number|string|null} replyToMessageId - ID del mensaje citado
+   * @param {number|string} conversationId - ID de la conversación
+   * @returns {Promise<number|null>} ID válido, o null si no es una respuesta
+   */
+  Message.resolveReplyTo = async function (replyToMessageId, conversationId) {
+    if (replyToMessageId == null || replyToMessageId === '') return null;
+
+    const original = await this.findByPk(replyToMessageId, {
+      attributes: ['id', 'conversation_id'],
+    });
+    if (!original || String(original.conversation_id) !== String(conversationId)) {
+      throw new Error('El mensaje al que respondes no pertenece a esta conversación');
+    }
+    return original.id;
+  };
+
   Message.createTextMessage = async function (data) {
     const message = await this.create({
       conversation_id: data.conversationId,
@@ -260,6 +306,7 @@ module.exports = (sequelize, DataTypes) => {
       message_type: 'text',
       content: data.content,
       original_language_id: data.originalLanguageId,
+      reply_to_message_id: data.replyToMessageId || null,
       ...(data.translatedContent && { translated_content: data.translatedContent }),
       ...(data.targetLanguageId && { target_language_id: data.targetLanguageId }),
       ...(data.translationStatus && { translation_status: data.translationStatus }),
@@ -284,6 +331,7 @@ module.exports = (sequelize, DataTypes) => {
       audio_transcription: data.audioTranscription,
       audio_transcription_language_id: data.audioTranscriptionLanguageId,
       original_language_id: data.originalLanguageId,
+      reply_to_message_id: data.replyToMessageId || null,
       ...(data.translatedContent && { translated_content: data.translatedContent }),
       ...(data.targetLanguageId && { target_language_id: data.targetLanguageId }),
       ...(data.translationStatus && { translation_status: data.translationStatus }),
@@ -328,6 +376,7 @@ module.exports = (sequelize, DataTypes) => {
         as: 'attachments',
         attributes: ['id', 'file_name', 'file_url', 'file_type', 'file_size', 'mime_type'],
       },
+      this.replyToInclude(),
     ];
 
     // Sin afterId se paginan desde los más recientes (offset 0 = últimos mensajes)
@@ -380,6 +429,7 @@ module.exports = (sequelize, DataTypes) => {
           model: models.MessageAttachment,
           as: 'attachments',
         },
+        this.replyToInclude(),
       ],
     });
   };
@@ -422,12 +472,22 @@ module.exports = (sequelize, DataTypes) => {
   };
 
   /**
-   * Elimina un mensaje (marca como eliminado)
+   * Elimina un mensaje (marca como eliminado).
+   * Se borran el texto, la traducción y el audio: los demás solo ven "Mensaje eliminado".
    * @param {number} id - ID del mensaje
    * @returns {Promise<Message>}
    */
   Message.softDelete = async function (id) {
-    await this.update({ is_deleted: true }, { where: { id } });
+    await this.update(
+      {
+        is_deleted: true,
+        content: null,
+        translated_content: null,
+        audio_url: null,
+        audio_transcription: null,
+      },
+      { where: { id } }
+    );
     return this.findByPk(id);
   };
 

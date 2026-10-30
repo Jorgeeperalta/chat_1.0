@@ -101,10 +101,13 @@
             :message="message"
             :compact="!isFirstInGroup(message, index)"
             :show-timestamp="isFirstInGroup(message, index)"
+            :can-edit="canEdit(message)"
+            :can-delete="canDelete(message)"
+            :highlighted="highlightedId === message.id"
             @reply="handleReply"
-            @react="handleReact"
+            @edit="handleEdit"
             @delete="handleDelete"
-            @click="handleMessageClick"
+            @jump="jumpToMessage"
           />
         </div>
       </template>
@@ -125,13 +128,50 @@
     </div>
 
     <div class="message-composer">
+      <!-- Respondiendo a un mensaje / editando uno propio -->
+      <div v-if="replyingTo || editingMessage" class="composer-context">
+        <v-icon :icon="editingMessage ? 'mdi-pencil' : 'mdi-reply'" color="primary" size="small" />
+        <div class="composer-context__body">
+          <span class="composer-context__title">
+            {{ editingMessage ? $t('chat.editingMessage') : $t('chat.replyingTo', { name: replyAuthor }) }}
+          </span>
+          <span class="composer-context__text">{{ contextText }}</span>
+        </div>
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          size="small"
+          density="comfortable"
+          :aria-label="$t('common.cancel')"
+          @click="cancelComposerContext"
+        />
+      </div>
+
       <MessageInput
+        ref="messageInput"
         :placeholder="$t('chat.typeMessage')"
+        :has-voice-capability="!editingMessage"
         @send="sendMessage"
         @send:voice="sendVoiceMessage"
         @change="handleTyping"
+        @keydown.esc="cancelComposerContext"
       />
     </div>
+
+    <!-- Confirmación para eliminar un mensaje -->
+    <v-dialog v-model="deleteDialog" max-width="360">
+      <v-card>
+        <v-card-title class="text-h6">{{ $t('chat.deleteMessageTitle') }}</v-card-title>
+        <v-card-text>{{ $t('chat.deleteMessageText') }}</v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="deleteDialog = false">{{ $t('common.cancel') }}</v-btn>
+          <v-btn color="error" variant="flat" :loading="deleting" @click="confirmDelete">
+            {{ $t('common.delete') }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -180,6 +220,15 @@ const isMobile = computed(() => device?.isMobile?.value || false);
 const loadingMore = ref(false);
 let typingTimeout = null;
 let isLocalUserTyping = false;
+
+const messageInput = ref(null);
+const replyingTo = ref(null);
+const editingMessage = ref(null);
+const deleteDialog = ref(false);
+const messageToDelete = ref(null);
+const deleting = ref(false);
+const highlightedId = ref(null);
+let highlightTimeout = null;
 
 // ============================================
 // COMPUTED
@@ -310,24 +359,87 @@ const loadMoreMessages = async () => {
   }
 };
 
-const handleReply = (message) => {
-  // TODO: Implementar respuesta a mensaje
-  console.log('Responder a:', message);
+// ---- Responder / editar / eliminar ----
+
+const isOwnMessage = (message) => String(message.sender_id) === String(currentUserId.value);
+
+// Rol del usuario actual en esta conversación (users[].UserConversation.role)
+const myRole = computed(() => conversationStore.getMembership(currentConversation.value).role);
+
+const canEdit = (message) =>
+  isOwnMessage(message) && !message.is_deleted && message.id != null && message.message_type === 'text';
+
+// Igual que el backend: lo propio, o cualquier mensaje si es admin del grupo
+const canDelete = (message) =>
+  !message.is_deleted && message.id != null && (isOwnMessage(message) || (isGroup.value && myRole.value === 'admin'));
+
+const replyAuthor = computed(() => {
+  const message = replyingTo.value;
+  if (!message) return '';
+  if (isOwnMessage(message)) return t('chat.you');
+  return getUserName(message.sender || userStore.getUserById(message.sender_id));
+});
+
+const contextText = computed(() => {
+  const message = editingMessage.value || replyingTo.value;
+  if (!message) return '';
+  if (message.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
+  return message.content || '';
+});
+
+const cancelComposerContext = () => {
+  if (editingMessage.value) messageInput.value?.clear();
+  replyingTo.value = null;
+  editingMessage.value = null;
 };
 
-const handleReact = (message) => {
-  // TODO: Implementar reacción a mensaje
-  console.log('Reaccionar a:', message);
+const handleReply = (message) => {
+  editingMessage.value = null;
+  replyingTo.value = message;
+  messageInput.value?.focus();
+};
+
+const handleEdit = (message) => {
+  replyingTo.value = null;
+  editingMessage.value = message;
+  messageInput.value?.setText(message.content || '');
+  nextTick(() => messageInput.value?.focus());
 };
 
 const handleDelete = (message) => {
-  // TODO: Implementar eliminación de mensaje
-  console.log('Eliminar:', message);
+  messageToDelete.value = message;
+  deleteDialog.value = true;
 };
 
-const handleMessageClick = (event) => {
-  // TODO: Implementar acciones al hacer click
-  console.log('Click en mensaje:', event);
+const confirmDelete = async () => {
+  const message = messageToDelete.value;
+  if (!message) return;
+  deleting.value = true;
+  try {
+    await chatStore.deleteMessage(message.id);
+    if (Number(replyingTo.value?.id) === Number(message.id)) replyingTo.value = null;
+    if (Number(editingMessage.value?.id) === Number(message.id)) cancelComposerContext();
+    deleteDialog.value = false;
+  } catch (error) {
+    console.error('Error al eliminar mensaje:', error);
+    snackbar?.error(error?.response?.data?.message || 'No se pudo eliminar el mensaje');
+  } finally {
+    deleting.value = false;
+    messageToDelete.value = null;
+  }
+};
+
+// Ir al mensaje citado y resaltarlo un momento
+const jumpToMessage = (messageId) => {
+  const element = messagesContainer.value?.querySelector(`[data-message-id="${messageId}"]`);
+  if (!element) {
+    snackbar?.show?.({ text: t('chat.messageNotLoaded'), color: 'info' });
+    return;
+  }
+  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  highlightedId.value = Number(messageId);
+  clearTimeout(highlightTimeout);
+  highlightTimeout = setTimeout(() => { highlightedId.value = null; }, 1600);
 };
 
 const scrollToBottom = async () => {
@@ -365,8 +477,25 @@ const handleTyping = (text) => {
 
 const sendMessage = async ({ content }) => {
   stopTyping();
+
+  // En modo edición el botón de enviar guarda el cambio
+  if (editingMessage.value) {
+    const message = editingMessage.value;
+    editingMessage.value = null;
+    if (content === message.content) return;
+    try {
+      await chatStore.editMessage(message.id, content);
+    } catch (error) {
+      console.error('Error al editar mensaje:', error);
+      snackbar?.error(error?.response?.data?.message || error.message || 'No se pudo editar el mensaje');
+    }
+    return;
+  }
+
+  const replyTo = replyingTo.value;
+  replyingTo.value = null;
   try {
-    await chatStore.sendTextMessage(content);
+    await chatStore.sendTextMessage(content, { replyTo });
     scrollToBottom();
   } catch (error) {
     console.error('Error al enviar mensaje:', error);
@@ -375,8 +504,10 @@ const sendMessage = async ({ content }) => {
 };
 
 const sendVoiceMessage = async (audio, duration) => {
+  const replyTo = replyingTo.value;
+  replyingTo.value = null;
   try {
-    await chatStore.sendAudioMessage(audio, duration);
+    await chatStore.sendAudioMessage(audio, duration, { replyTo });
     scrollToBottom();
   } catch (error) {
     console.error('Error al enviar audio:', error);
@@ -436,6 +567,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearInterval(clock);
+  clearTimeout(highlightTimeout);
   stopTyping();
   if (conversationId.value) {
     socketStore.leaveConversation(conversationId.value);
@@ -470,6 +602,7 @@ watch(currentConversation, (conversation) => {
 // Escuchar cambios en la conversación
 watch(() => conversationId.value, async (newId, oldId) => {
   stopTyping();
+  cancelComposerContext();
   if (oldId) {
     socketStore.leaveConversation(oldId);
   }
@@ -621,6 +754,39 @@ watch(() => conversationId.value, async (newId, oldId) => {
     background-color: var(--app-surface);
     border-top: 1px solid var(--app-border);
     box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.05);
+  }
+
+  // Barra "Respondiendo a… / Editando" sobre el input
+  .composer-context {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+    padding: 6px 6px 6px 12px;
+    border-left: 3px solid rgb(var(--v-theme-primary));
+    border-radius: 8px;
+    background-color: rgba(var(--v-theme-primary), 0.08);
+
+    &__body {
+      display: flex;
+      flex: 1 1 auto;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    &__title {
+      color: rgb(var(--v-theme-primary));
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
+    &__text {
+      overflow: hidden;
+      color: var(--app-text-muted);
+      font-size: 0.85rem;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 }
 
