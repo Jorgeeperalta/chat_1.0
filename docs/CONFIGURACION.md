@@ -1,4 +1,4 @@
-# Guía de Configuración del Proyecto Chat con Traducción
+# Guía de Configuración del Proyecto Converxa
 
 ## 📋 Tabla de Contenidos
 
@@ -269,7 +269,7 @@ cp .env.example .env
 
 ```env
 # Configuración de la aplicación
-VITE_APP_NAME=Chat Translate
+VITE_APP_NAME=Converxa
 VITE_APP_VERSION=1.0.0
 VITE_APP_DESCRIPTION=Chat en tiempo real con traducción por IA
 

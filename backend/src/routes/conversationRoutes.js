@@ -11,6 +11,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const { models } = require('../models');
 const logger = require('../utils/logger');
 const storageService = require('../services/storageService');
+const { userRoom } = require('../utils/socketRooms');
 const multer = require('multer');
 
 const upload = multer({
@@ -32,8 +33,9 @@ router.post(
     body('name').optional().trim().isLength({ max: 255 }),
     body('type').isIn(['private', 'group']).withMessage('El tipo debe ser private o group'),
     body('description').optional().isLength({ max: 500 }),
-    body('participant_ids').if(body('type').equals('group')).isArray({ min: 2 }).withMessage('Se requieren al menos 2 participantes para una conversación grupal'),
-    body('participant_ids.*').if(body('type').equals('group')).isInt().withMessage('Los IDs de participantes deben ser números'),
+    body('name').if(body('type').equals('group')).trim().notEmpty().withMessage('El grupo necesita un nombre'),
+    body('participant_ids').if(body('type').equals('group')).isArray({ min: 1, max: 255 }).withMessage('Agrega al menos 1 participante al grupo'),
+    body('participant_ids.*').isInt({ min: 1 }).withMessage('Los IDs de participantes deben ser números').toInt(),
     body('participant_ids').if(body('type').equals('private')).isArray({ min: 1, max: 1 }).withMessage('Se requiere exactamente 1 participante para una conversación privada'),
   ],
   async (req, res, next) => {
@@ -46,12 +48,10 @@ router.post(
         });
       }
 
-      const { name, type, description, participant_ids } = req.body;
+      const { name, type, description } = req.body;
 
-      // Verificar que el usuario actual está incluido en los participantes
-      if (!participant_ids.includes(req.userId)) {
-        participant_ids.push(req.userId);
-      }
+      // Sin repetidos y con el usuario actual incluido
+      const participant_ids = [...new Set([...req.body.participant_ids, req.userId])];
 
       // Verificar que todos los participantes existen
       const users = await models.User.findByIds(participant_ids);
@@ -94,6 +94,16 @@ router.post(
 
       // Obtener conversación con participantes
       const fullConversation = await models.Conversation.findByIdWithParticipants(conversation.id);
+
+      // El grupo aparece al instante en la lista de chats de los demás integrantes
+      if (type === 'group') {
+        const io = req.app.get('io');
+        for (const userId of participant_ids) {
+          if (userId !== req.userId) {
+            io?.to(userRoom(userId)).emit('conversation_created', { conversation: fullConversation });
+          }
+        }
+      }
 
       res.status(201).json({
         success: true,

@@ -199,12 +199,21 @@ module.exports = (sequelize, DataTypes) => {
     }
 
     const include = [
+      // Solo las conversaciones de las que el usuario es miembro
+      {
+        model: models.UserConversation,
+        as: 'participants',
+        where: { user_id: userId, left_at: null },
+        attributes: ['user_id'],
+        required: true,
+      },
+      // Todos los participantes (la lista muestra al otro usuario y si está en línea).
+      // Campos explícitos: nunca enviar password_hash ni datos internos.
       {
         model: models.User,
         as: 'users',
+        attributes: ['id', 'username', 'first_name', 'last_name', 'avatar_url', 'status', 'last_seen_at'],
         through: { attributes: ['role', 'is_muted', 'is_pinned', 'unread_count', 'last_read_message_id'] },
-        where: { id: userId },
-        required: true,
       },
       {
         model: models.User,
@@ -214,7 +223,7 @@ module.exports = (sequelize, DataTypes) => {
       {
         model: models.Message,
         as: 'lastMessage',
-        attributes: ['id', 'message_type', 'content', 'created_at', 'sender_id'],
+        attributes: ['id', 'message_type', 'content', 'created_at', 'sender_id', 'is_deleted'],
         include: [
           {
             model: models.User,

@@ -185,6 +185,23 @@ export const useSocketStore = defineStore('socket', () => {
       conversationStore.handleNewMessage(data.conversationId, data.message);
     });
     
+    // Evento: un mensaje fue editado
+    socket.value.on('message_updated', (data) => {
+      chatStore.applyMessageUpdate(data.message);
+      conversationStore.handleMessageChanged(data.conversationId, data.message);
+    });
+
+    // Evento: un mensaje fue eliminado
+    socket.value.on('message_deleted', (data) => {
+      chatStore.applyMessageDeleted(data.messageId);
+      conversationStore.handleMessageChanged(data.conversationId, { id: data.messageId, is_deleted: true, content: null });
+    });
+
+    // Evento: alguien me agregó a un grupo nuevo
+    socket.value.on('conversation_created', (data) => {
+      conversationStore.addConversation(data.conversation);
+    });
+
     // Evento: usuario se unió a la conversación
     socket.value.on('user_joined', (data) => {
       conversationStore.handleUserJoined(data);

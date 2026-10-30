@@ -4,7 +4,7 @@
  * @author Arquitecto de Software Senior
  */
 
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 
 /**
  * @typedef {Object} UserConversationAttributes
@@ -233,6 +233,31 @@ module.exports = (sequelize, DataTypes) => {
       { is_pinned: isPinned },
       { where: { user_id: userId, conversation_id: conversationId } }
     );
+  };
+
+  /**
+   * Contactos de un usuario: quienes comparten alguna conversación con él.
+   * Es su "agenda": se agrega alguien al iniciar un chat con él.
+   * @param {number} userId - ID del usuario
+   * @returns {Promise<number[]>} IDs de los contactos (sin repetir, sin el propio usuario)
+   */
+  UserConversation.findContactIds = async function (userId) {
+    // Solo membresías vigentes (quien salió del chat no cuenta)
+    const memberships = await this.findAll({
+      where: { user_id: userId, left_at: null },
+      attributes: ['conversation_id'],
+    });
+    if (memberships.length === 0) return [];
+
+    const contacts = await this.findAll({
+      where: {
+        conversation_id: { [Op.in]: memberships.map(m => m.conversation_id) },
+        user_id: { [Op.ne]: userId },
+        left_at: null,
+      },
+      attributes: ['user_id'],
+    });
+    return [...new Set(contacts.map(c => c.user_id))];
   };
 
   return UserConversation;

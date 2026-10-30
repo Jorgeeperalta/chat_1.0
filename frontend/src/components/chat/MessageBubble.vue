@@ -15,10 +15,11 @@
       { 'message-voice': message.type === 'voice' },
       { 'message-system': message.type === 'system' },
       { 'message-translated': showTranslation && translatedText },
-      { 'message-compact': compact }
+      { 'message-compact': compact },
+      { 'message-deleted': isDeleted },
+      { 'message-highlighted': highlighted }
     ]"
     :style="bubbleStyle"
-    @click="handleMessageClick"
     @mouseenter="hover = true"
     @mouseleave="hover = false"
   >
@@ -38,8 +39,46 @@
       </v-avatar>
     </div>
 
-    <!-- Contenido del mensaje -->
-    <div class="message-content">
+    <!-- Contenido del mensaje: tocarlo (o clic derecho) abre las acciones -->
+    <div
+      class="message-content"
+      @click="handleMessageClick"
+      @contextmenu="openMenu"
+    >
+      <!-- Acciones del mensaje -->
+      <v-menu
+        v-if="hasActions"
+        v-model="menuOpen"
+        activator="parent"
+        :open-on-click="false"
+        location="bottom"
+      >
+        <v-list density="compact" min-width="170">
+          <v-list-item prepend-icon="mdi-reply" :title="$t('common.reply')" @click="replyToMessage" />
+          <v-list-item v-if="copyText" prepend-icon="mdi-content-copy" :title="$t('common.copy')" @click="copyMessage" />
+          <v-list-item v-if="canEdit" prepend-icon="mdi-pencil" :title="$t('common.edit')" @click="editMessage" />
+          <v-list-item
+            v-if="canDelete"
+            prepend-icon="mdi-delete"
+            :title="$t('common.delete')"
+            base-color="error"
+            @click="deleteMessage"
+          />
+        </v-list>
+      </v-menu>
+
+      <!-- En escritorio: flecha visible al pasar el mouse -->
+      <v-btn
+        v-if="hasActions && hover"
+        class="message-menu-btn"
+        icon="mdi-chevron-down"
+        variant="text"
+        size="x-small"
+        density="comfortable"
+        :aria-label="$t('common.more')"
+        @click.stop="menuOpen = true"
+      />
+
       <!-- Header del mensaje -->
       <div
         v-if="!compact"
@@ -61,6 +100,24 @@
 
       <!-- Contenido principal -->
       <div class="message-body">
+        <!-- Mensaje eliminado -->
+        <div v-if="isDeleted" class="message-deleted-text">
+          <v-icon icon="mdi-cancel" size="small" />
+          <span>{{ $t('chat.messageDeleted') }}</span>
+        </div>
+
+        <template v-else>
+        <!-- Mensaje citado (respuesta) -->
+        <button
+          v-if="message.replyTo"
+          type="button"
+          class="message-quote"
+          @click.stop="emit('jump', message.replyTo.id)"
+        >
+          <span class="message-quote__author">{{ quoteAuthor }}</span>
+          <span class="message-quote__text">{{ quoteText }}</span>
+        </button>
+
         <!-- Mensaje de texto -->
         <template v-if="message.type === 'text' || message.type === 'transcription'">
           <div
@@ -172,6 +229,9 @@
             </v-chip>
           </div>
         </template>
+
+        <span v-if="message.is_edited" class="message-edited">{{ $t('chat.edited') }}</span>
+        </template>
       </div>
 
       <!-- Footer del mensaje -->
@@ -208,71 +268,14 @@
           />
         </div>
 
-        <!-- Botones de acción (hover) -->
-        <div
-          v-if="hover && !compact"
-          class="message-actions"
-        >
-          <v-btn
-            variant="text"
-            icon
-            size="x-small"
-            color="grey"
-            @click.stop="copyMessage"
-          >
-            <v-icon icon="mdi-content-copy" size="small" />
-            <v-tooltip activator="parent" location="top">
-              {{ $t('common.copy') }}
-            </v-tooltip>
-          </v-btn>
-          
-          <v-btn
-            variant="text"
-            icon
-            size="x-small"
-            color="grey"
-            @click.stop="reactToMessage"
-          >
-            <v-icon icon="mdi-emoticon-happy-outline" size="small" />
-            <v-tooltip activator="parent" location="top">
-              {{ $t('common.react') }}
-            </v-tooltip>
-          </v-btn>
-          
-          <v-btn
-            variant="text"
-            icon
-            size="x-small"
-            color="grey"
-            @click.stop="replyToMessage"
-          >
-            <v-icon icon="mdi-reply" size="small" />
-            <v-tooltip activator="parent" location="top">
-              {{ $t('common.reply') }}
-            </v-tooltip>
-          </v-btn>
-          
-          <v-btn
-            v-if="isCurrentUser && !isSystemMessage"
-            variant="text"
-            icon
-            size="x-small"
-            color="grey"
-            @click.stop="deleteMessage"
-          >
-            <v-icon icon="mdi-delete" size="small" />
-            <v-tooltip activator="parent" location="top">
-              {{ $t('common.delete') }}
-            </v-tooltip>
-          </v-btn>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, inject, onMounted } from 'vue';
+import { ref, computed, inject } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import { useTranslationStore } from '@/stores/translationStore';
@@ -312,6 +315,20 @@ const props = defineProps({
     type: [Number, String],
     default: 36,
   },
+  // Permisos calculados por la vista (dependen del rol en el grupo)
+  canEdit: {
+    type: Boolean,
+    default: false,
+  },
+  canDelete: {
+    type: Boolean,
+    default: false,
+  },
+  // Resaltado breve al saltar a un mensaje citado
+  highlighted: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 // ============================================
@@ -322,8 +339,9 @@ const emit = defineEmits([
   'click',
   'double-click',
   'reply',
-  'react',
+  'edit',
   'delete',
+  'jump',
   'copy',
   'play',
   'pause',
@@ -333,6 +351,7 @@ const emit = defineEmits([
 // STORES
 // ============================================
 
+const { t } = useI18n();
 const authStore = useAuthStore();
 const userStore = useUserStore();
 const translationStore = useTranslationStore();
@@ -349,6 +368,7 @@ const snackbar = inject('snackbar');
 // ============================================
 
 const hover = ref(false);
+const menuOpen = ref(false);
 const isPlaying = ref(false);
 const showTranslationLocal = ref(false);
 const translatedText = ref('');
@@ -373,8 +393,36 @@ const sender = computed(() => {
     return authStore.user;
   }
   
-  // Buscar el usuario en el store
-  return userStore.getUserById(props.message.sender_id);
+  // Buscar el usuario en el store (en grupos puede no estar: usar el que trae el mensaje)
+  return userStore.getUserById(props.message.sender_id) || props.message.sender;
+});
+
+const isDeleted = computed(() => Boolean(props.message.is_deleted));
+
+// Mensajes reales (ya confirmados por el servidor) que no son del sistema
+const hasActions = computed(() =>
+  !isSystemMessage.value && !isDeleted.value && props.message.id != null
+);
+
+const copyText = computed(() =>
+  props.message.type === 'voice' ? props.message.transcription : props.message.content
+);
+
+// Cita de la respuesta: autor y un extracto del mensaje original
+const quoteAuthor = computed(() => {
+  const quoted = props.message.replyTo;
+  if (!quoted) return '';
+  if (String(quoted.sender_id) === String(currentUserId.value)) return t('chat.you');
+  const user = quoted.sender || userStore.getUserById(quoted.sender_id);
+  return `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || '';
+});
+
+const quoteText = computed(() => {
+  const quoted = props.message.replyTo;
+  if (!quoted) return '';
+  if (quoted.is_deleted) return t('chat.messageDeleted');
+  if (quoted.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
+  return quoted.content || '';
 });
 
 const senderName = computed(() => {
@@ -408,7 +456,15 @@ const formattedText = computed(() => {
   let text = !isCurrentUser.value && availableTranslation.value && !props.showOriginal
     ? availableTranslation.value
     : props.message.content || '';
-  
+
+  // Escapar HTML: el texto lo escribe otro usuario y se muestra con v-html
+  text = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
   // Convertir URLs a enlaces clickeables
   text = text.replace(
     /(https?:\/\/[^\s]+)/g,
@@ -440,6 +496,8 @@ const canTranslate = computed(() => {
   // No se puede traducir mensajes del sistema o mensajes vacíos
   if (isSystemMessage.value) return false;
   if (!props.message.content && !props.message.transcription) return false;
+  // Los mensajes propios ya están en el idioma del usuario
+  if (isCurrentUser.value) return false;
   return true;
 });
 
@@ -479,6 +537,17 @@ const userPreferredLanguage = computed(() => {
 
 const handleMessageClick = (event) => {
   emit('click', { event, message: props.message });
+
+  // Tocar el mensaje abre sus acciones (salvo que se toque un enlace o un botón)
+  if (hasActions.value && !event.target.closest('a, button, input')) {
+    menuOpen.value = true;
+  }
+};
+
+const openMenu = (event) => {
+  if (!hasActions.value) return;
+  event.preventDefault();
+  menuOpen.value = true;
 };
 
 const handleDoubleClick = (event) => {
@@ -525,10 +594,8 @@ const handleSeek = (time) => {
 
 const copyMessage = async () => {
   try {
-    const text = props.message.type === 'voice' 
-      ? props.message.transcription 
-      : props.message.content;
-    
+    const text = copyText.value;
+
     if (!text) {
       snackbar?.error('No hay texto para copiar');
       return;
@@ -547,8 +614,8 @@ const replyToMessage = () => {
   emit('reply', props.message);
 };
 
-const reactToMessage = () => {
-  emit('react', props.message);
+const editMessage = () => {
+  emit('edit', props.message);
 };
 
 const deleteMessage = () => {
@@ -818,6 +885,90 @@ const formatDate = (dateString) => {
 // Estilos para mensajes de voz
 .message-voice .message-content {
   padding: 8px;
+}
+
+.message-content {
+  cursor: pointer;
+}
+
+// Flecha de acciones (escritorio)
+.message-menu-btn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 1;
+  background: inherit;
+  opacity: 0.85;
+}
+
+// Cita del mensaje al que se responde
+.message-quote {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 140px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 6px;
+  background-color: rgba(var(--v-theme-primary), 0.1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &__author {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgb(var(--v-theme-primary));
+  }
+
+  &__text {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 0.82rem;
+    opacity: 0.85;
+    overflow-wrap: anywhere;
+  }
+}
+
+.message-sent .message-quote {
+  border-left-color: rgba(var(--v-theme-on-primary), 0.9);
+  background-color: rgba(255, 255, 255, 0.18);
+
+  .message-quote__author {
+    color: rgb(var(--v-theme-on-primary));
+  }
+}
+
+.message-edited {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-style: italic;
+  opacity: 0.7;
+  text-align: right;
+}
+
+.message-deleted-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.message-deleted .message-content {
+  cursor: default;
+}
+
+// Resaltado al saltar desde una cita
+.message-highlighted .message-content {
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-warning), 0.8);
+  transition: box-shadow 0.3s ease;
 }
 
 // Responsive

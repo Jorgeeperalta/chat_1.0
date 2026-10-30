@@ -61,9 +61,6 @@ router.get(
         }
       );
 
-      // Cada lector recibe la traducción a su propio idioma
-      await messageTranslationService.localizeMessagesForReader(messages, req.userId);
-
       // Marcar mensajes como entregados
       for (const message of messages) {
         if (message.sender_id !== req.userId && !message.is_delivered) {
@@ -178,6 +175,7 @@ router.post(
     body('content').trim().notEmpty().withMessage('El contenido del mensaje es obligatorio'),
     body('language_code').optional().isString().isLength({ min: 2, max: 10 }),
     body('original_language_id').optional().isInt(),
+    body('reply_to_message_id').optional({ nullable: true }).isInt({ min: 1 }),
   ],
   async (req, res, next) => {
     try {
@@ -190,7 +188,14 @@ router.post(
       }
 
       const { conversationId } = req.params;
-      const { content, language_code, original_language_id } = req.body;
+      const { content, language_code, original_language_id, reply_to_message_id } = req.body;
+
+      let replyToMessageId;
+      try {
+        replyToMessageId = await models.Message.resolveReplyTo(reply_to_message_id, conversationId);
+      } catch (error) {
+        return res.status(400).json({ error: 'Bad Request', message: error.message });
+      }
 
       // Obtener el idioma nativo del usuario
       const user = await models.User.findByPk(req.userId, {
@@ -206,6 +211,7 @@ router.post(
         senderId: req.userId,
         content,
         originalLanguageId: original_language_id || sourceLanguage?.id,
+        replyToMessageId,
         translationStatus: 'pending',
       });
 
@@ -484,15 +490,38 @@ router.patch(
         });
       }
 
+      if (message.is_deleted || message.message_type !== 'text') {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Solo se pueden editar mensajes de texto',
+        });
+      }
+
+      // Sigue siendo miembro (pudo haber salido del grupo)
+      const isMember = await models.UserConversation.isMember(req.userId, message.conversation_id);
+      if (!isMember) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: 'No eres miembro de esta conversación',
+        });
+      }
+
       // Actualizar mensaje
       await message.update({
         content,
         is_edited: true,
         translated_content: null, // Resetear traducción
-        translation_status: null,
+        target_language_id: null,
+        translation_status: 'pending',
       });
 
       const updatedMessage = await models.Message.findByIdWithDetails(messageId);
+
+      // Avisar en vivo a quienes tienen el chat abierto
+      req.app.get('io')?.to(String(message.conversation_id)).emit('message_updated', {
+        conversationId: message.conversation_id,
+        message: updatedMessage,
+      });
 
       // Re-traducir asíncronamente
       setImmediate(async () => {
@@ -571,10 +600,15 @@ router.delete(
         });
       }
 
+      // El remitente, o un administrador del grupo. En un chat privado nadie borra
+      // los mensajes del otro (antes bastaba con haber creado el chat).
+      const membership = await models.UserConversation.findOne({
+        where: { user_id: req.userId, conversation_id: message.conversation_id, left_at: null },
+      });
       const isSender = message.sender_id === req.userId;
-      const isAdmin = conversation.created_by === req.userId;
+      const isGroupAdmin = conversation.type === 'group' && membership?.role === 'admin';
 
-      if (!isSender && !isAdmin) {
+      if (!membership || (!isSender && !isGroupAdmin)) {
         return res.status(403).json({
           error: 'Forbidden',
           message: 'No tienes permisos para eliminar este mensaje',
@@ -583,6 +617,11 @@ router.delete(
 
       // Eliminar mensaje (soft delete)
       await models.Message.softDelete(messageId);
+
+      req.app.get('io')?.to(String(message.conversation_id)).emit('message_deleted', {
+        conversationId: message.conversation_id,
+        messageId: message.id,
+      });
 
       res.json({
         success: true,
@@ -644,7 +683,7 @@ router.post(
 
       // Implementación de reacciones (simplificada)
       // En una implementación completa, se crearía una tabla de reacciones
-      
+
       res.json({
         success: true,
         message: 'Reacción agregada correctamente',

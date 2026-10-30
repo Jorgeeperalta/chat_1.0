@@ -21,6 +21,9 @@
     <!-- Notificaciones globales -->
     <NotificationBar />
 
+    <!-- PWA: instalar y actualizar -->
+    <PwaPrompts />
+
     <!-- Router View - Aquí se renderizan las vistas -->
     <router-view v-slot="{ Component, route }">
       <transition name="route-fade" mode="out-in">
@@ -87,14 +90,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, provide, readonly, watch } from 'vue';
+import { ref, computed, onMounted, provide, watch } from 'vue';
 import { useRouter } from 'vue-router';
-import { useTheme } from 'vuetify';
+import { useTheme, useDisplay } from 'vuetify';
 import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import NotificationBar from '@/components/common/NotificationBar.vue';
+import PwaPrompts from '@/components/common/PwaPrompts.vue';
 
 // ============================================
 // ESTADO GLOBAL
@@ -147,10 +151,9 @@ const snackbar = ref({
 // ============================================
 
 const currentRoute = computed(() => router.currentRoute.value);
-const isMobile = computed(() => {
-  if (typeof window === 'undefined') return false;
-  return window.innerWidth < 768;
-});
+// Ancho reactivo de Vuetify: se actualiza al rotar o redimensionar (window.innerWidth no lo es)
+const { width: viewportWidth } = useDisplay();
+const isMobile = computed(() => viewportWidth.value < 768);
 
 // ============================================
 // PROVIDE / INJECT
@@ -213,11 +216,13 @@ provide('snackbar', {
 });
 
 // Proporcionar información del dispositivo
-provide('device', readonly({
+// Objeto plano con computed: los consumidores leen device.isMobile.value.
+// (Con readonly({...}) Vue desenvolvía los refs y device.isMobile.value daba siempre undefined.)
+provide('device', {
   isMobile,
   isDesktop: computed(() => !isMobile.value),
-  isTablet: computed(() => window.innerWidth >= 768 && window.innerWidth < 1024),
-}));
+  isTablet: computed(() => viewportWidth.value >= 768 && viewportWidth.value < 1024),
+});
 
 // ============================================
 // MONTAJE

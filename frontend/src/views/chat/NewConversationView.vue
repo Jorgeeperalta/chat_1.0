@@ -1,595 +1,477 @@
 <!--
  * @file NewConversationView.vue
- * @description Vista para crear nueva conversación
- * @author Arquitecto de Software Senior
+ * @description Nuevo chat: búsqueda por nombre de usuario (chat privado) o creación de un grupo.
+ * Los integrantes del grupo salen de la agenda (contactos) o de la búsqueda exacta.
  -->
 
 <template>
-  <v-container fluid class="new-conversation-view fill-height pa-0">
-    <!-- Header -->
-    <v-app-bar
-      density="comfortable"
-      color="transparent"
-      flat
-      class="app-bar"
-    >
-      <v-btn
-        variant="text"
-        icon
-        @click="goBack"
-      >
-        <v-icon icon="mdi-arrow-left" />
-      </v-btn>
-      
-      <v-toolbar-title class="font-weight-medium">
-        {{ $t('chat.newConversation') }}
-      </v-toolbar-title>
-      
-      <v-spacer />
-      
-      <!-- Filtro de idioma -->
-      <v-menu
-        :close-on-content-click="false"
-        location="bottom end"
-        transition="scale-transition"
-      >
-        <template v-slot:activator="{ props: menuProps }">
-          <v-btn
-            v-bind="menuProps"
-            variant="text"
-            icon
-          >
-            <v-icon icon="mdi-filter" />
-            <v-tooltip activator="parent" location="bottom">
-              {{ $t('common.filter') }}
-            </v-tooltip>
-          </v-btn>
-        </template>
-        <v-list density="compact" nav>
-          <v-list-item @click="filterByAll">
-            <v-list-item-title>{{ $t('common.all') }}</v-list-item-title>
-          </v-list-item>
-          <v-list-item @click="filterByOnline">
-            <template v-slot:prepend>
-              <v-icon icon="mdi-circle" size="small" color="success" />
-            </template>
-            <v-list-item-title>{{ $t('chat.online') }}</v-list-item-title>
-          </v-list-item>
-          <v-list-item @click="filterByLanguage">
-            <template v-slot:prepend>
-              <v-icon :icon="currentLanguageIcon" />
-            </template>
-            <v-list-item-title>{{ $t('settings.language') }}: {{ currentLanguageName }}</v-list-item-title>
-          </v-list-item>
-        </v-list>
-      </v-menu>
-    </v-app-bar>
-
-    <!-- Barra de búsqueda -->
-    <div class="search-bar px-4 py-2">
-      <v-text-field
-        v-model="searchQuery"
-        :placeholder="$t('chat.searchUsers')"
-        density="comfortable"
-        variant="outlined"
-        hide-details
-        prepend-inner-icon="mdi-magnify"
-        clearable
-        @update:modelValue="searchUsers"
-      />
+  <div class="new-conversation-view">
+    <!-- Encabezado -->
+    <div class="nc-header">
+      <v-btn variant="text" icon="mdi-arrow-left" :aria-label="$t('common.back')" @click="goBack" />
+      <h1 class="text-h6 font-weight-bold">
+        {{ isGroupMode ? $t('chat.newGroup') : $t('chat.newConversation') }}
+      </h1>
     </div>
 
-    <!-- Lista de usuarios -->
-    <v-list density="comfortable" nav class="user-list">
-      <!-- Usuario seleccionado -->
-      <template v-if="selectedUser">
-        <v-list-item
-          class="selected-user"
-          :prepend-avatar="getUserAvatar(selectedUser)"
-          lines="two"
+    <v-btn-toggle
+      v-model="mode"
+      mandatory
+      color="primary"
+      variant="outlined"
+      density="comfortable"
+      divided
+      class="nc-mode mx-4 mb-2"
+    >
+      <v-btn value="private" prepend-icon="mdi-account">{{ $t('chat.newChat') }}</v-btn>
+      <v-btn value="group" prepend-icon="mdi-account-group">{{ $t('chat.newGroup') }}</v-btn>
+    </v-btn-toggle>
+
+    <!-- Datos del grupo -->
+    <div v-if="isGroupMode" class="nc-group px-4">
+      <v-text-field
+        v-model="groupName"
+        :label="$t('chat.groupName')"
+        variant="outlined"
+        density="comfortable"
+        maxlength="100"
+        counter
+        prepend-inner-icon="mdi-account-group"
+      />
+      <div v-if="selectedMembers.length" class="nc-selected">
+        <v-chip
+          v-for="user in selectedMembers"
+          :key="user.id"
+          closable
+          color="primary"
+          variant="tonal"
+          class="nc-selected__chip"
+          @click:close="toggleMember(user)"
         >
-          <template v-slot:title>
-            <strong>{{ getUserName(selectedUser) }}</strong>
+          {{ displayName(user) }}
+        </v-chip>
+      </div>
+    </div>
+
+    <!-- Buscador por nombre de usuario -->
+    <div class="nc-search">
+      <v-text-field
+        v-model="searchQuery"
+        :placeholder="isGroupMode ? $t('chat.addMember') : $t('chat.searchByUsername')"
+        variant="solo-filled"
+        flat
+        rounded="lg"
+        hide-details
+        clearable
+        :autofocus="!isGroupMode"
+        autocapitalize="off"
+        autocomplete="off"
+        spellcheck="false"
+        prepend-inner-icon="mdi-at"
+        class="nc-search__field"
+        @keydown.enter="lookupNow"
+      />
+      <p class="text-caption text-medium-emphasis mt-2 mb-0 px-1">
+        {{ $t('chat.usernameHint') }}
+      </p>
+    </div>
+
+    <div class="nc-body">
+      <div v-if="searching" class="text-center py-4">
+        <v-progress-circular color="primary" indeterminate size="24" />
+      </div>
+
+      <template v-else-if="foundUser">
+        <v-list-subheader>{{ $t('chat.newContact') }}</v-list-subheader>
+        <v-list-item lines="two" class="nc-user nc-user--found" @click="selectUser(foundUser)">
+          <template v-slot:prepend>
+            <UserAvatar :user="foundUser" />
           </template>
-          <template v-slot:subtitle>
-            <span class="text-caption">
-              {{ selectedUser.username }} | {{ $t('chat.selected') }}
-            </span>
-          </template>
+          <v-list-item-title class="font-weight-medium">{{ displayName(foundUser) }}</v-list-item-title>
+          <v-list-item-subtitle>@{{ foundUser.username }}</v-list-item-subtitle>
           <template v-slot:append>
-            <v-btn
-              color="primary"
-              variant="elevated"
-              size="small"
-              @click="createConversation"
-            >
+            <v-checkbox-btn v-if="isGroupMode" :model-value="isSelected(foundUser)" color="primary" readonly />
+            <v-btn v-else color="primary" variant="flat" size="small" :loading="startingId === foundUser.id">
               {{ $t('chat.startChat') }}
             </v-btn>
           </template>
         </v-list-item>
-        <v-divider class="my-2" />
       </template>
 
-      <!-- Usuarios -->
-      <template v-for="user in filteredUsers" :key="user.id">
+      <p
+        v-else-if="notFoundUsername"
+        class="text-body-2 text-medium-emphasis text-center py-6 px-4"
+      >
+        {{ $t('chat.userNotFound', { username: notFoundUsername }) }}
+      </p>
+
+      <!-- Grupo: elegir integrantes de la agenda -->
+      <template v-if="isGroupMode && !searching">
+        <v-list-subheader v-if="filteredContacts.length">{{ $t('chat.contacts') }}</v-list-subheader>
         <v-list-item
-          v-if="user.id !== currentUserId"
-          @click="selectUser(user)"
-          :active="selectedUser?.id === user.id"
-          :prepend-avatar="getUserAvatar(user)"
+          v-for="user in filteredContacts"
+          :key="user.id"
           lines="two"
+          class="nc-user"
+          @click="toggleMember(user)"
         >
-          <template v-slot:title>
-            {{ getUserName(user) }}
+          <template v-slot:prepend>
+            <UserAvatar :user="user" show-status />
           </template>
-          <template v-slot:subtitle>
-            <span class="text-caption">
-              {{ user.username }} | {{ getUserLanguage(user) }}
-            </span>
-          </template>
+          <v-list-item-title class="font-weight-medium">{{ displayName(user) }}</v-list-item-title>
+          <v-list-item-subtitle>@{{ user.username }}</v-list-item-subtitle>
           <template v-slot:append>
-            <v-chip
-              v-if="isOnline(user)"
-              color="success"
-              variant="tonal"
-              size="x-small"
-              class="ml-2"
-            >
-              {{ $t('chat.online') }}
-            </v-chip>
+            <v-checkbox-btn :model-value="isSelected(user)" color="primary" readonly />
           </template>
         </v-list-item>
+        <p
+          v-if="!contacts.length && !foundUser && !notFoundUsername"
+          class="text-body-2 text-medium-emphasis text-center py-6 px-4"
+        >
+          {{ $t('chat.noContacts') }}
+        </p>
       </template>
 
-      <!-- Indicador de carga -->
-      <div
-        v-if="loading"
-        class="text-center py-4"
-      >
-        <v-progress-circular
-          color="primary"
-          indeterminate
-          size="24"
-        />
-      </div>
-
-      <!-- Mensaje de no hay usuarios -->
-      <div
-        v-if="!loading && filteredUsers.length === 0"
-        class="no-users text-center py-8"
-      >
-        <v-icon icon="mdi-account-search" size="40" color="grey" />
-        <p class="text-subtitle-1 text-grey mt-2">
-          {{ searchQuery ? $t('chat.noUsersFound') : $t('chat.noUsersAvailable') }}
+      <div v-else-if="!isGroupMode && !foundUser && !notFoundUsername && !searching" class="nc-empty text-center py-10 px-6">
+        <v-icon icon="mdi-account-search" size="48" color="grey" />
+        <p class="text-body-1 text-medium-emphasis mt-3 mb-0">
+          {{ $t('chat.searchByUsername') }}
         </p>
       </div>
-    </v-list>
+    </div>
 
-    <!-- Diálogo de crear conversación grupal -->
-    <v-dialog v-model="groupDialog" max-width="500">
-      <v-card>
-        <v-card-title>
-          <span class="text-h5 font-weight-bold">{{ $t('chat.createGroup') }}</span>
-        </v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="groupName"
-            :label="$t('chat.groupName')"
-            :placeholder="$t('chat.groupName')"
-            density="comfortable"
-            variant="outlined"
-            class="mb-4"
-          />
-          
-          <v-select
-            v-model="selectedUsers"
-            :label="$t('chat.addMembers')"
-            :placeholder="$t('chat.addMembers')"
-            :items="availableUsers"
-            item-title="name"
-            item-value="id"
-            multiple
-            chips
-            density="comfortable"
-            variant="outlined"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="groupDialog = false">
-            {{ $t('common.cancel') }}
-          </v-btn>
-          <v-btn
-            color="primary"
-            variant="elevated"
-            :disabled="!groupName.trim() || selectedUsers.length < 2"
-            @click="createGroup"
-          >
-            {{ $t('common.create') }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- Crear el grupo -->
+    <div v-if="isGroupMode" class="nc-footer">
+      <span class="text-body-2 text-medium-emphasis">
+        {{ $t('chat.selectedMembers', { n: selectedMembers.length }) }}
+      </span>
+      <v-btn
+        color="primary"
+        variant="flat"
+        prepend-icon="mdi-check"
+        :loading="creatingGroup"
+        :disabled="!canCreateGroup"
+        @click="createGroup"
+      >
+        {{ $t('chat.createGroup') }}
+      </v-btn>
+    </div>
 
-    <!-- Snackbar -->
-    <v-snackbar v-model="showSnackbar" :color="snackbarColor" timeout="3000">
-      {{ snackbarText }}
-      <template v-slot:actions>
-        <v-btn variant="text" @click="showSnackbar = false">
-          {{ $t('common.close') }}
-        </v-btn>
-      </template>
+    <v-snackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">
+      {{ snackbar.text }}
     </v-snackbar>
-  </v-container>
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, inject } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, watch, onMounted, onUnmounted, h } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
-import { useAuthStore } from '@/stores/authStore';
-import { useUserStore } from '@/stores/userStore';
-import { useConversationStore } from '@/stores/conversationStore';
-import { useTranslationStore } from '@/stores/translationStore';
+import { VAvatar, VBadge, VImg } from 'vuetify/components';
 import api from '@/services/api';
+import { useConversationStore } from '@/stores/conversationStore';
+import { getUserDisplayName, getInitials } from '@/utils/conversationDisplay';
 
-// ============================================
-// INJECT
-// ============================================
-
-const device = inject('device');
-
-// ============================================
-// STORES
-// ============================================
+// Mismo formato que la validación del backend (POST /api/users/search).
+const MIN_USERNAME_LENGTH = 3;
+const LOOKUP_DELAY_MS = 400;
 
 const router = useRouter();
+const route = useRoute();
 const { t } = useI18n();
-const authStore = useAuthStore();
-const userStore = useUserStore();
 const conversationStore = useConversationStore();
-const translationStore = useTranslationStore();
 
-// ============================================
-// ESTADO LOCAL
-// ============================================
-
-const isMobile = computed(() => device?.isMobile?.value || false);
-const searchQuery = ref('');
-const loading = ref(false);
-const users = ref([]);
-const selectedUser = ref(null);
-const filterType = ref('all'); // all, online, language
-const groupDialog = ref(false);
+// 'private' = chat con una persona, 'group' = nuevo grupo (/chat/new?mode=group)
+const mode = ref(route.query.mode === 'group' ? 'group' : 'private');
+const isGroupMode = computed(() => mode.value === 'group');
 const groupName = ref('');
-const selectedUsers = ref([]);
-const showSnackbar = ref(false);
-const snackbarText = ref('');
-const snackbarColor = ref('info');
+const selectedMembers = ref([]);
+const contacts = ref([]);
+const creatingGroup = ref(false);
 
-// ============================================
-// COMPUTED
-// ============================================
+const searchQuery = ref('');
+const foundUser = ref(null);
+const notFoundUsername = ref('');
+const searching = ref(false);
+const startingId = ref(null);
+const snackbar = ref({ show: false, text: '', color: 'error' });
 
-const currentUserId = computed(() => authStore.user?.id);
+let lookupTimer = null;
+let lookupSeq = 0;
 
-const filteredUsers = computed(() => {
-  let filtered = users.value;
-  
-  // Filtrar por búsqueda
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase();
-    filtered = filtered.filter(user => {
-      const name = getUserName(user).toLowerCase();
-      const username = user.username?.toLowerCase() || '';
-      return name.includes(query) || username.includes(query);
-    });
-  }
-  
-  // Filtrar por tipo
-  switch (filterType.value) {
-    case 'online':
-      filtered = filtered.filter(user => isOnline(user));
-      break;
-    case 'language': {
-      const currentLangId = Number(authStore.user?.preferred_language_id);
-      filtered = filtered.filter(user => Number(user.preferred_language_id) === currentLangId);
-      break;
+// Avatar con iniciales y, opcionalmente, el punto de "en línea"
+const UserAvatar = (props) => {
+  const name = getUserDisplayName(props.user);
+  const avatar = h(
+    VAvatar,
+    { size: 44, color: props.user.avatar_url ? undefined : 'primary' },
+    () => props.user.avatar_url
+      ? h(VImg, { src: props.user.avatar_url, cover: true })
+      : h('span', { class: 'text-white font-weight-bold' }, getInitials(name))
+  );
+  if (!props.showStatus) return h('div', { class: 'mr-4' }, [avatar]);
+  return h(VBadge, {
+    dot: true,
+    bordered: true,
+    location: 'bottom end',
+    offsetX: 3,
+    offsetY: 3,
+    color: props.user.status === 'online' ? 'success' : 'grey-lighten-1',
+    class: 'mr-4',
+  }, () => avatar);
+};
+UserAvatar.props = ['user', 'showStatus'];
+
+const normalizedQuery = computed(() =>
+  (searchQuery.value || '').trim().replace(/^@/, '').toLowerCase()
+);
+
+const displayName = (user) => getUserDisplayName(user) || user.username;
+
+// Busca el usuario exacto en el servidor para iniciar una conversación.
+const lookupUser = async (username) => {
+  const seq = ++lookupSeq;
+  searching.value = true;
+  try {
+    let response;
+    try {
+      response = await api.post('/api/users/search', { query: username });
+    } catch (error) {
+      // Compatibilidad temporal con backends que todavía exponen solo GET.
+      // Una vez todos los entornos estén actualizados, puede quitarse este fallback.
+      if (error?.response?.status !== 404) throw error;
+      response = await api.get('/api/users/search', { params: { username } });
     }
-  }
-  
-  // Excluir el usuario actual
-  return filtered.filter(user => user.id !== currentUserId.value);
-});
+    const { data } = response;
+    if (seq !== lookupSeq) return; // llegó una búsqueda más nueva
 
-const availableUsers = computed(() => {
-  return filteredUsers.value.map(user => ({
-    id: user.id,
-    name: getUserName(user),
-  }));
-});
-
-const currentLanguage = computed(() => {
-  return Number(authStore.user?.preferred_language_id) || null;
-});
-
-const currentLanguageIcon = computed(() => {
-  const lang = translationStore.getLanguageById(currentLanguage.value);
-  return lang?.flag || 'mdi-flag-outline-es';
-});
-
-const currentLanguageName = computed(() => {
-  const lang = translationStore.getLanguageById(currentLanguage.value);
-  return lang?.name || 'Idioma';
-});
-
-// ============================================
-// MÉTODOS
-// ============================================
-
-const goBack = () => {
-  router.go(-1);
-};
-
-const fetchUsers = async () => {
-  try {
-    loading.value = true;
-    const response = await api.get('/api/users', {
-      params: {
-        limit: 100,
-        exclude: currentUserId.value,
-      },
-    });
-    users.value = response.data.users || [];
+    if (data.user) {
+      foundUser.value = data.user;
+      notFoundUsername.value = '';
+    } else {
+      foundUser.value = null;
+      notFoundUsername.value = username;
+    }
   } catch (error) {
-    console.error('Error al cargar usuarios:', error);
-    showSnackbarMessage(t('errors.loadUsersFailed'), 'error');
+    if (seq === lookupSeq) {
+      console.error('Error al buscar usuario:', error);
+      foundUser.value = null;
+      notFoundUsername.value = username;
+    }
   } finally {
-    loading.value = false;
+    if (seq === lookupSeq) searching.value = false;
   }
 };
 
-const searchUsers = () => {
-  // La filtración se hace automáticamente en la propiedad computada
+const resetLookup = () => {
+  clearTimeout(lookupTimer);
+  lookupSeq++;
+  foundUser.value = null;
+  notFoundUsername.value = '';
+  searching.value = false;
 };
 
-const selectUser = (user) => {
-  selectedUser.value = user;
+const lookupNow = () => {
+  const username = normalizedQuery.value;
+  if (username.length < MIN_USERNAME_LENGTH) {
+    resetLookup();
+    return;
+  }
+
+  clearTimeout(lookupTimer);
+  lookupUser(username);
 };
 
-const createConversation = async () => {
-  if (!selectedUser.value) return;
-  
+watch(normalizedQuery, () => {
+  resetLookup();
+  if (normalizedQuery.value.length >= MIN_USERNAME_LENGTH) {
+    lookupTimer = setTimeout(lookupNow, LOOKUP_DELAY_MS);
+  }
+});
+
+// Abre el chat existente con el usuario o crea uno nuevo (así queda en la agenda)
+const startChat = async (user) => {
+  if (startingId.value) return;
+  startingId.value = user.id;
   try {
-    loading.value = true;
-    const conversation = await conversationStore.createPrivateConversation(
-      selectedUser.value.id
-    );
-    
-    // Redirigir a la conversación
-    router.push({
-      name: 'conversation',
-      params: { conversationId: conversation.id },
-    });
+    const conversation = await conversationStore.createPrivateConversation(user.id);
+    router.push({ name: 'conversation', params: { conversationId: conversation.id } });
   } catch (error) {
     console.error('Error al crear conversación:', error);
-    const errorMessage = error?.response?.data?.message || 
-      error?.message || 
-      'Error al crear conversación';
-    showSnackbarMessage(errorMessage, 'error');
+    showError(error?.response?.data?.message || t('errors.serverError'));
   } finally {
-    loading.value = false;
+    startingId.value = null;
   }
 };
 
+// ---- Grupos ----
+
+const isSelected = (user) => selectedMembers.value.some(member => member.id === user.id);
+
+const toggleMember = (user) => {
+  selectedMembers.value = isSelected(user)
+    ? selectedMembers.value.filter(member => member.id !== user.id)
+    : [...selectedMembers.value, user];
+};
+
+// Contactos filtrados por lo que se escribe en el buscador (solo nombre de usuario)
+const filteredContacts = computed(() => {
+  const query = normalizedQuery.value;
+  return contacts.value.filter(user =>
+    !query || user.username.toLowerCase().includes(query)
+  ).filter(user => user.id !== foundUser.value?.id);
+});
+
+const canCreateGroup = computed(() =>
+  groupName.value.trim().length > 0 && selectedMembers.value.length > 0 && !creatingGroup.value
+);
+
 const createGroup = async () => {
+  if (!groupName.value.trim()) return showError(t('chat.groupNeedsName'));
+  if (!selectedMembers.value.length) return showError(t('chat.groupNeedsMembers'));
+
+  creatingGroup.value = true;
   try {
-    loading.value = true;
-    
-    // createConversation ya agrega la conversación al store
     const conversation = await conversationStore.createConversation({
       type: 'group',
       name: groupName.value.trim(),
-      participant_ids: selectedUsers.value,
+      participant_ids: selectedMembers.value.map(user => user.id),
     });
-    
-    // Cerrar diálogo y redirigir
-    groupDialog.value = false;
-    groupName.value = '';
-    selectedUsers.value = [];
-    
-    router.push({
-      name: 'conversation',
-      params: { conversationId: conversation.id },
-    });
-    
-    showSnackbarMessage('Grupo creado correctamente', 'success');
+    router.push({ name: 'conversation', params: { conversationId: conversation.id } });
   } catch (error) {
     console.error('Error al crear grupo:', error);
-    const errorMessage = error?.response?.data?.message || 
-      error?.message || 
-      'Error al crear grupo';
-    showSnackbarMessage(errorMessage, 'error');
+    const details = error?.response?.data?.details;
+    showError(details?.[0]?.msg || error?.response?.data?.message || t('errors.serverError'));
   } finally {
-    loading.value = false;
+    creatingGroup.value = false;
   }
 };
 
-const filterByAll = () => {
-  filterType.value = 'all';
+const loadContacts = async () => {
+  try {
+    const { data } = await api.get('/api/users');
+    contacts.value = data.users || [];
+  } catch (error) {
+    console.error('Error al cargar contactos:', error);
+  }
 };
 
-const filterByOnline = () => {
-  filterType.value = 'online';
+// En modo grupo, tocar un usuario lo agrega/quita; en modo chat, abre el chat
+const selectUser = (user) => {
+  if (isGroupMode.value) {
+    toggleMember(user);
+    searchQuery.value = '';
+  } else {
+    startChat(user);
+  }
 };
 
-const filterByLanguage = () => {
-  filterType.value = 'language';
+watch(mode, (value) => {
+  router.replace({ query: value === 'group' ? { mode: 'group' } : {} });
+  if (value === 'group' && contacts.value.length === 0) loadContacts();
+});
+
+const showError = (text) => {
+  snackbar.value = { show: true, text, color: 'error' };
 };
 
-const isOnline = (user) => {
-  return userStore.isUserOnline(user.id);
+const goBack = () => {
+  if (window.history.length > 1) router.back();
+  else router.push({ name: 'home' });
 };
 
-const getUserName = (user) => {
-  return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'Usuario';
-};
+onMounted(async () => {
+  // La lista de chats sirve para reusar un chat existente en vez de duplicarlo.
+  if (conversationStore.conversations.length === 0) {
+    conversationStore.fetchConversations().catch(() => {});
+  }
+  if (isGroupMode.value) loadContacts();
+});
 
-const getUserAvatar = (user) => {
-  if (!user) return '';
-  return user.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(getUserName(user))}&background=random`;
-};
-
-const getUserLanguage = (user) => {
-  if (!user.preferred_language_id) return '';
-  const lang = translationStore.getLanguageById(user.preferred_language_id);
-  return lang?.name || '';
-};
-
-const showSnackbarMessage = (text, color = 'info') => {
-  snackbarText.value = text;
-  snackbarColor.value = color;
-  showSnackbar.value = true;
-};
-
-// ============================================
-// MONTAJE
-// ============================================
-
-onMounted(() => {
-  fetchUsers();
+onUnmounted(() => {
+  clearTimeout(lookupTimer);
 });
 </script>
 
 <style lang="scss" scoped>
 .new-conversation-view {
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-bottom: 24px;
+}
+
+.nc-header {
   display: flex;
-  flex-direction: column;
-  background-color: var(--app-surface);
-  
-  .app-bar {
-    background-color: var(--app-surface);
-    border-bottom: 1px solid var(--app-border);
-  }
-  
-  .search-bar {
-    background-color: var(--app-bg);
-    border-bottom: 1px solid var(--app-border);
-  }
-  
-  .user-list {
-    flex: 1;
-    overflow-y: auto;
-    background-color: var(--app-surface);
-    
-    // Scrollbar custom
-    &::-webkit-scrollbar {
-      width: 4px;
-    }
-    
-    &::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    
-    &::-webkit-scrollbar-thumb {
-      background: var(--app-scrollbar);
-      border-radius: 2px;
-    }
-    
-    &::-webkit-scrollbar-thumb:hover {
-      background: var(--app-scrollbar);
-    }
-    
-    .v-list-item {
-      padding: 12px 16px;
-      
-      :deep(.v-list-item__prepend) {
-        margin-right: 16px;
-        
-        .v-avatar {
-          border-radius: 50%;
-        }
-      }
-      
-      :deep(.v-list-item__title) {
-        font-weight: 500;
-      }
-      
-      :deep(.v-list-item__subtitle) {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      
-      &:hover {
-        background-color: rgba(var(--v-theme-on-surface), 0.04);
-      }
-      
-      // Estado seleccionado
-      &.v-list-item--active {
-        background-color: rgba(24, 103, 192, 0.1);
-      }
-    }
-    
-    .selected-user {
-      background-color: rgba(24, 103, 192, 0.1);
-      border-radius: 8px;
-      margin: 8px 12px;
-      
-      :deep(.v-list-item__title) {
-        color: rgb(var(--v-theme-primary));
-      }
-    }
-    
-    .no-users {
-      color: var(--app-text-muted);
-      
-      .v-icon {
-        opacity: 0.6;
-      }
-    }
-  }
-  
-  // Diálogo de grupo
-  :deep(.v-dialog) {
-    .v-card {
-      border-radius: 12px;
-    }
-    
-    .v-card-text {
-      padding: 20px;
-    }
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px 4px;
+}
+
+.nc-search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 16px 12px;
+  background: rgb(var(--v-theme-background));
+}
+
+// Buscador grande y fácil de tocar
+.nc-search__field :deep(.v-field) {
+  min-height: 56px;
+  font-size: 1.05rem;
+}
+
+.nc-search__field :deep(input) {
+  min-height: 56px;
+}
+
+.nc-body {
+  padding: 0 8px;
+}
+
+.nc-user {
+  border-radius: 12px;
+  min-height: 68px;
+  margin-bottom: 2px;
+}
+
+.nc-user--found {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.nc-mode {
+  display: flex;
+
+  .v-btn {
+    flex: 1 1 0;
   }
 }
 
-// Transiciones
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.nc-group {
+  padding-top: 8px;
 }
 
-.v-list-item {
-  animation: slideIn 0.2s ease-out;
+.nc-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
 }
 
-// Responsive
-@media (max-width: 768px) {
-  .new-conversation-view {
-    .search-bar {
-      padding: 8px 12px;
-    }
-    
-    .user-list {
-      .v-list-item {
-        padding: 10px 12px;
-      }
-    }
-  }
+// Botón de crear grupo siempre visible abajo
+.nc-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  background: rgb(var(--v-theme-background));
+  border-top: 1px solid var(--app-border);
 }
 </style>

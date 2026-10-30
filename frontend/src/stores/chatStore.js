@@ -497,11 +497,88 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   /**
+   * Copia del mensaje citado para mostrar la respuesta antes de que confirme el servidor
+   * @param {Message|null} replyTo - Mensaje al que se responde
+   * @returns {Object}
+   */
+  const replyFields = (replyTo) => {
+    if (!replyTo?.id) return {};
+    return {
+      reply_to_message_id: replyTo.id,
+      replyTo: {
+        id: replyTo.id,
+        sender_id: replyTo.sender_id,
+        message_type: replyTo.message_type,
+        content: replyTo.content,
+        audio_duration: replyTo.audio_duration,
+        is_deleted: replyTo.is_deleted,
+        sender: replyTo.sender,
+      },
+    };
+  };
+
+  /**
+   * Aplica cambios a un mensaje cargado y a las citas que lo muestran
+   * @param {number} messageId - ID del mensaje
+   * @param {Object} updates - Campos nuevos
+   */
+  const patchMessage = (messageId, updates) => {
+    const message = messagesById.value[messageId];
+    if (message) {
+      Object.assign(message, updates);
+      const index = messages.value.findIndex(item => item.id === messageId);
+      if (index !== -1) messages.value[index] = message;
+    }
+
+    // Respuestas que citan este mensaje
+    const quoteUpdates = {};
+    for (const key of ['content', 'is_deleted', 'is_edited']) {
+      if (key in updates) quoteUpdates[key] = updates[key];
+    }
+    messages.value.forEach(item => {
+      if (item.replyTo && Number(item.replyTo.id) === Number(messageId)) {
+        item.replyTo = { ...item.replyTo, ...quoteUpdates };
+      }
+    });
+  };
+
+  /**
+   * Mensaje editado (respuesta del servidor o evento 'message_updated')
+   * @param {Object} message - Mensaje completo devuelto por el backend
+   */
+  const applyMessageUpdate = (message) => {
+    if (!message?.id) return;
+    patchMessage(message.id, {
+      content: message.content,
+      is_edited: message.is_edited,
+      translated_content: message.translated_content,
+      target_language_id: message.target_language_id,
+      translation_status: message.translation_status,
+    });
+  };
+
+  /**
+   * Mensaje eliminado (para todos)
+   * @param {number} messageId - ID del mensaje
+   */
+  const applyMessageDeleted = (messageId) => {
+    patchMessage(Number(messageId), {
+      is_deleted: true,
+      content: null,
+      translated_content: null,
+      transcription: null,
+      audio_url: null,
+    });
+  };
+
+  /**
    * Envía un mensaje de texto
    * @param {string} content - Contenido del mensaje
+   * @param {Object} [options]
+   * @param {Message} [options.replyTo] - Mensaje al que responde
    * @returns {Promise<Message>}
    */
-  const sendTextMessage = async (content) => {
+  const sendTextMessage = async (content, { replyTo = null } = {}) => {
     let tempId;
     try {
       if (!currentConversationId.value) {
@@ -525,17 +602,19 @@ export const useChatStore = defineStore('chat', () => {
         sender: authStore.user,
         isCurrentUser: true,
         status: 'sending',
+        ...replyFields(replyTo),
       };
-      
+
       // Agregar a mensajes pendientes
       pendingMessages.value.push(tempMessage);
       messages.value.push(tempMessage);
-      
+
       // Enviar por Socket.io
       await socketStore.sendTextMessage({
         conversationId: currentConversationId.value,
         clientMessageId: tempId,
         content,
+        replyToMessageId: replyTo?.id || null,
       });
       
       // Limpiar el campo de escritura
@@ -630,9 +709,11 @@ export const useChatStore = defineStore('chat', () => {
    * Envía un mensaje de audio
    * @param {Blob} audioBlob - Blob de audio
    * @param {number} [duration] - Duración en segundos (si se grabó fuera del store)
+   * @param {Object} [options]
+   * @param {Message} [options.replyTo] - Mensaje al que responde
    * @returns {Promise<Message>}
    */
-  const sendAudioMessage = async (audioBlob, duration = recordingDuration.value) => {
+  const sendAudioMessage = async (audioBlob, duration = recordingDuration.value, { replyTo = null } = {}) => {
     let tempId;
     let localUrl;
     try {
@@ -671,6 +752,7 @@ export const useChatStore = defineStore('chat', () => {
         sender: authStore.user,
         isCurrentUser: true,
         status: 'sending',
+        ...replyFields(replyTo),
       };
 
       // Agregar a mensajes pendientes
@@ -684,6 +766,7 @@ export const useChatStore = defineStore('chat', () => {
         audioBase64,
         duration,
         mimeType,
+        replyToMessageId: replyTo?.id || null,
       });
 
       // Resetear temporizador
@@ -797,37 +880,50 @@ export const useChatStore = defineStore('chat', () => {
     if (!message.content) {
       throw new Error('Solo se pueden reintentar mensajes de texto');
     }
-    return sendTextMessage(message.content);
+    return sendTextMessage(message.content, { replyTo: message.replyTo });
   };
 
   /**
-   * Elimina un mensaje
+   * Edita un mensaje de texto propio
+   * @param {number} messageId - ID del mensaje
+   * @param {string} content - Texto nuevo
+   */
+  const editMessage = async (messageId, content) => {
+    try {
+      const text = content.trim();
+      if (!text) throw new Error('El mensaje no puede estar vacío');
+
+      const response = await api.patch(`/api/messages/${messageId}`, { content: text });
+      applyMessageUpdate(response.data.message);
+      conversationStore.handleMessageChanged(
+        messagesById.value[messageId]?.conversation_id,
+        { id: messageId, content: text, is_edited: true }
+      );
+    } catch (err) {
+      error.value = err;
+      throw err;
+    }
+  };
+
+  /**
+   * Elimina un mensaje para todos (el servidor valida los permisos)
    * @param {number} messageId - ID del mensaje
    */
   const deleteMessage = async (messageId) => {
     try {
       const message = messagesById.value[messageId];
-      
+
       if (!message) {
         throw new Error('Mensaje no encontrado');
       }
-      
-      if (message.sender_id !== authStore.user?.id) {
-        throw new Error('No puedes eliminar este mensaje');
-      }
-      
+
       await api.delete(`/api/messages/${messageId}`);
-      
-      // Marcar como eliminado
-      message.is_deleted = true;
-      message.content = '[Mensaje eliminado]';
-      messagesById.value[messageId] = message;
-      
-      // Actualizar en el array
-      const index = messages.value.findIndex(m => m.id === messageId);
-      if (index !== -1) {
-        messages.value[index] = message;
-      }
+
+      applyMessageDeleted(messageId);
+      conversationStore.handleMessageChanged(
+        message.conversation_id,
+        { id: messageId, is_deleted: true, content: null }
+      );
     } catch (err) {
       error.value = err;
       throw err;
@@ -931,6 +1027,9 @@ export const useChatStore = defineStore('chat', () => {
     stopAudio,
     playNotificationSound,
     retryMessage,
+    applyMessageUpdate,
+    applyMessageDeleted,
+    editMessage,
     deleteMessage,
     markMessageAsRead,
     clear,

@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS messages (
     audio_duration INT DEFAULT NULL, -- Duración en segundos
     audio_transcription TEXT DEFAULT NULL, -- Transcripción del audio
     audio_transcription_language_id INT DEFAULT NULL,
+    reply_to_message_id INT DEFAULT NULL, -- Mensaje al que responde
     
     -- Metadatos para procesamiento
     mistral_prompt_tokens INT DEFAULT NULL,
@@ -178,6 +179,7 @@ CREATE TABLE IF NOT EXISTS messages (
     INDEX idx_sender_id (sender_id),
     INDEX idx_created_at (created_at),
     INDEX idx_message_type (message_type),
+    INDEX idx_reply_to_message_id (reply_to_message_id),
     INDEX idx_original_language (original_language_id),
     INDEX idx_target_language (target_language_id),
     INDEX idx_conversation_created (conversation_id, created_at)

@@ -189,7 +189,7 @@ router.afterEach((to, from) => {
  * @param {Object} route - Ruta actual
  */
 const setPageTitle = (route) => {
-  const appName = import.meta.env.VITE_APP_NAME || 'Chat Translate';
+  const appName = import.meta.env.VITE_APP_NAME || 'Converxa';
   let title = appName;
   
   if (route.meta.title) {
