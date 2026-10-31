@@ -84,12 +84,9 @@ describe('NewConversationView', () => {
     store.createConversation = vi.fn(async () => ({ id: 500 }));
     api.get.mockReset();
     api.post.mockReset();
-    api.get.mockImplementation(async (url) => {
+    api.get.mockImplementation(async (url, config) => {
       if (url === '/api/users') return { data: { users: CONTACTS } };
-      throw new Error(`URL inesperada ${url}`);
-    });
-    api.post.mockImplementation(async (url, body) => {
-      if (url === '/api/users/search') return { data: { user: EXISTING[body.query] || null } };
+      if (url === '/api/users/search') return { data: { user: EXISTING[config.params.username] || null } };
       throw new Error(`URL inesperada ${url}`);
     });
   });
@@ -97,7 +94,7 @@ describe('NewConversationView', () => {
   it('encuentra a un usuario por su nombre exacto y abre el chat con él', async () => {
     const wrapper = await mountView();
     await type(wrapper, '@Carla');
-    expect(api.post).toHaveBeenCalledWith('/api/users/search', { query: 'carla' });
+    expect(api.get).toHaveBeenCalledWith('/api/users/search', { params: { username: 'carla' } });
     const found = wrapper.find('.nc-user--found');
     expect(found.text()).toContain('@carla');
     expect(found.text()).toContain('Iniciar chat');
@@ -118,7 +115,7 @@ describe('NewConversationView', () => {
   it('no busca en el servidor con menos de 3 letras', async () => {
     const wrapper = await mountView();
     await type(wrapper, 'an');
-    expect(api.post).not.toHaveBeenCalled();
+    expect(api.get).not.toHaveBeenCalledWith('/api/users/search', expect.anything());
   });
 
   it('modo grupo: lista la agenda, permite elegir integrantes y crea el grupo', async () => {

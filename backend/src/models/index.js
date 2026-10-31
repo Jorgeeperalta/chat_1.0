@@ -137,6 +137,11 @@ if (models.UserSession) {
   models.UserSession.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
 }
 
+// Relaciones de PushSubscription
+if (models.PushSubscription) {
+  models.PushSubscription.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
+}
+
 // Relaciones de ApiKey
 if (models.ApiKey) {
   // No tiene relaciones con otros modelos
@@ -156,7 +161,7 @@ const sync = async (options = {}) => {
 
 /**
  * Aplica los cambios de esquema que el código necesita y que una base existente puede no tener
- * (equivale a migrations/002_reply_to_message.sql). Es idempotente: si ya están, no hace nada.
+ * (equivale a migrations/002_reply_to_message.sql y 003_push_subscriptions.sql). Es idempotente: si ya están, no hace nada.
  * Así basta con subir el código al hosting, sin correr SQL a mano.
  */
 const ensureSchema = async () => {
@@ -180,6 +185,9 @@ const ensureSchema = async () => {
     await sequelize.query('UPDATE messages SET is_edited = FALSE WHERE is_edited = TRUE');
     console.log('✅ Columna messages.reply_to_message_id creada');
   }
+
+  // Notificaciones push: sync() solo crea la tabla si no existe (no modifica una existente)
+  await models.PushSubscription.sync();
 };
 
 // Verificar conexión

@@ -5,10 +5,11 @@
 
 <template>
   <!-- Nueva versión disponible: se aplica cuando el usuario quiere (no corta una conversación) -->
+  <!-- Dentro de un chat va arriba: abajo tapaba el cuadro de escribir y el micrófono -->
   <v-snackbar
     :model-value="needRefresh"
     :timeout="-1"
-    location="bottom"
+    :location="isChatScreen ? 'top' : 'bottom'"
     color="primary"
     multi-line
   >
@@ -24,8 +25,9 @@
   </v-snackbar>
 
   <!-- Instalar la app -->
+  <!-- No dentro de un chat (tapaba el cuadro de escribir): se ofrece en la lista de chats -->
   <v-snackbar
-    :model-value="showInstall && !needRefresh"
+    :model-value="showInstall && !needRefresh && !isChatScreen"
     :timeout="-1"
     location="bottom"
     multi-line
@@ -48,7 +50,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useRegisterSW } from 'virtual:pwa-register/vue';
+
+// Pantallas con el cuadro de escribir abajo: ahí ningún aviso puede ir abajo
+const CHAT_SCREENS = ['conversation', 'new-conversation'];
+
+const route = useRoute();
+const isChatScreen = computed(() => CHAT_SCREENS.includes(route.name));
 
 // Si el usuario descarta el aviso de instalación, no volver a mostrarlo por un tiempo
 const DISMISS_KEY = 'pwa-install-dismissed-at';

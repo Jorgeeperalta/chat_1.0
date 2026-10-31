@@ -172,7 +172,7 @@ import api from '@/services/api';
 import { useConversationStore } from '@/stores/conversationStore';
 import { getUserDisplayName, getInitials } from '@/utils/conversationDisplay';
 
-// Mismo formato que la validación del backend (POST /api/users/search).
+// Mismo formato que la validación del backend (GET /api/users/search).
 const MIN_USERNAME_LENGTH = 3;
 const LOOKUP_DELAY_MS = 400;
 
@@ -233,16 +233,8 @@ const lookupUser = async (username) => {
   const seq = ++lookupSeq;
   searching.value = true;
   try {
-    let response;
-    try {
-      response = await api.post('/api/users/search', { query: username });
-    } catch (error) {
-      // Compatibilidad temporal con backends que todavía exponen solo GET.
-      // Una vez todos los entornos estén actualizados, puede quitarse este fallback.
-      if (error?.response?.status !== 404) throw error;
-      response = await api.get('/api/users/search', { params: { username } });
-    }
-    const { data } = response;
+    // El backend solo expone GET /api/users/search (un POST daba 404 y mostraba un error)
+    const { data } = await api.get('/api/users/search', { params: { username } });
     if (seq !== lookupSeq) return; // llegó una búsqueda más nueva
 
     if (data.user) {

@@ -514,8 +514,8 @@ router.post(
   authMiddleware.verifyConversationRole(['admin']),
   [
     param('conversationId').isInt().withMessage('El ID de la conversación debe ser un número'),
-    body('user_ids').isArray({ min: 1 }).withMessage('Se requiere al menos un ID de usuario'),
-    body('user_ids.*').isInt().withMessage('Los IDs de usuarios deben ser números'),
+    body('user_ids').isArray({ min: 1, max: 255 }).withMessage('Se requiere al menos un ID de usuario'),
+    body('user_ids.*').isInt({ min: 1 }).withMessage('Los IDs de usuarios deben ser números').toInt(),
   ],
   async (req, res, next) => {
     try {
@@ -527,8 +527,8 @@ router.post(
         });
       }
 
-      const { conversationId } = req.params;
-      const { user_ids } = req.body;
+      const conversationId = Number(req.params.conversationId);
+      const user_ids = [...new Set(req.body.user_ids)];
 
       const conversation = await models.Conversation.findByPk(conversationId);
 
@@ -536,6 +536,13 @@ router.post(
         return res.status(404).json({
           error: 'Not Found',
           message: 'Conversación no encontrada',
+        });
+      }
+
+      if (conversation.type !== 'group') {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Solo se pueden agregar integrantes a un grupo',
         });
       }
 
@@ -548,32 +555,39 @@ router.post(
         });
       }
 
-      // Agregar participantes
-      const existingParticipants = await models.UserConversation.findAll({
-        where: { conversation_id: conversationId },
+      // Nuevos integrantes, o que vuelven después de haber salido / sido eliminados
+      const memberships = await models.UserConversation.findAll({
+        where: { conversation_id: conversationId, user_id: user_ids },
       });
+      const membershipByUser = new Map(memberships.map(m => [m.user_id, m]));
 
-      const existingUserIds = existingParticipants.map(p => p.user_id);
-
-      // Filtrar usuarios que ya son participantes
-      const newUserIds = user_ids.filter(id => !existingUserIds.includes(id));
-
-      if (newUserIds.length > 0) {
-        await models.UserConversation.bulkCreate(
-          newUserIds.map(userId => ({
-            user_id: userId,
-            conversation_id: conversationId,
-            role: 'member',
-          }))
-        );
+      const addedUserIds = [];
+      for (const userId of user_ids) {
+        const membership = membershipByUser.get(userId);
+        if (!membership) {
+          await models.UserConversation.create({ user_id: userId, conversation_id: conversationId, role: 'member' });
+          addedUserIds.push(userId);
+        } else if (membership.left_at) {
+          await membership.update({ left_at: null, role: 'member', joined_at: new Date(), unread_count: 0 });
+          addedUserIds.push(userId);
+        }
       }
 
       const updatedConversation = await models.Conversation.findByIdWithParticipants(conversationId);
 
+      if (addedUserIds.length > 0) {
+        const io = req.app.get('io');
+        // El grupo aparece en la lista de chats de los agregados
+        for (const userId of addedUserIds) {
+          io?.to(userRoom(userId)).emit('conversation_created', { conversation: updatedConversation });
+        }
+        io?.to(String(conversationId)).emit('participants_updated', { conversationId, conversation: updatedConversation });
+      }
+
       res.json({
         success: true,
         conversation: updatedConversation,
-        addedCount: newUserIds.length,
+        addedCount: addedUserIds.length,
       });
     } catch (error) {
       logger.error(`❌ Error al agregar participantes a conversación ${req.params.conversationId}: ${error.message}`);
@@ -605,9 +619,9 @@ router.delete(
         });
       }
 
-      const { conversationId, userId } = req.params;
+      const conversationId = Number(req.params.conversationId);
+      const userId = Number(req.params.userId);
 
-      // No permitir eliminar al creador
       const conversation = await models.Conversation.findByPk(conversationId);
       if (!conversation) {
         return res.status(404).json({
@@ -616,20 +630,35 @@ router.delete(
         });
       }
 
-      if (conversation.created_by === parseInt(userId, 10)) {
+      if (conversation.type !== 'group') {
         return res.status(400).json({
           error: 'Bad Request',
-          message: 'No se puede eliminar al creador de la conversación',
+          message: 'Solo se pueden eliminar integrantes de un grupo',
         });
       }
 
-      // Verificar que el usuario a eliminar es participante
+      if (userId === req.userId) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'Para salir del grupo usa la opción "Salir del grupo"',
+        });
+      }
+
+      // No permitir eliminar al creador
+      if (conversation.created_by === userId) {
+        return res.status(400).json({
+          error: 'Bad Request',
+          message: 'No se puede eliminar al creador del grupo',
+        });
+      }
+
+      // Verificar que el usuario a eliminar sigue en el grupo
       const participant = await models.UserConversation.findUserConversation(
         userId,
         conversationId
       );
 
-      if (!participant) {
+      if (!participant || participant.left_at) {
         return res.status(404).json({
           error: 'Not Found',
           message: 'El usuario no es participante de esta conversación',
@@ -639,9 +668,18 @@ router.delete(
       // Eliminar participante (marcar como salido)
       await participant.update({ left_at: new Date() });
 
+      const updatedConversation = await models.Conversation.findByIdWithParticipants(conversationId);
+
+      // Deja de recibir los mensajes del grupo en vivo, y el chat desaparece de su lista
+      const io = req.app.get('io');
+      io?.in(userRoom(userId)).socketsLeave(String(conversationId));
+      io?.to(userRoom(userId)).emit('removed_from_conversation', { conversationId });
+      io?.to(String(conversationId)).emit('participants_updated', { conversationId, conversation: updatedConversation });
+
       res.json({
         success: true,
         message: 'Participante eliminado correctamente',
+        conversation: updatedConversation,
       });
     } catch (error) {
       logger.error(`❌ Error al eliminar participante de conversación ${req.params.conversationId}: ${error.message}`);

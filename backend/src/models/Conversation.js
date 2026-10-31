@@ -213,7 +213,11 @@ module.exports = (sequelize, DataTypes) => {
         model: models.User,
         as: 'users',
         attributes: ['id', 'username', 'first_name', 'last_name', 'avatar_url', 'status', 'last_seen_at'],
-        through: { attributes: ['role', 'is_muted', 'is_pinned', 'unread_count', 'last_read_message_id'] },
+        // Sin los que salieron o fueron eliminados del grupo
+        through: {
+          attributes: ['role', 'is_muted', 'is_pinned', 'unread_count', 'last_read_message_id'],
+          where: { left_at: null },
+        },
       },
       {
         model: models.User,
@@ -260,7 +264,7 @@ module.exports = (sequelize, DataTypes) => {
         {
           model: models.User,
           as: 'users',
-          through: { attributes: ['role', 'nickname', 'is_muted', 'joined_at'] },
+          through: { attributes: ['role', 'nickname', 'is_muted', 'joined_at'], where: { left_at: null } },
           attributes: ['id', 'username', 'first_name', 'last_name', 'avatar_url', 'status', 'last_seen_at'],
         },
         {

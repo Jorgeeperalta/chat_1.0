@@ -51,6 +51,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/index.html',
         navigateFallbackDenylist: BACKEND_ROUTES,
+        // Notificaciones push (sonido/vibración con la app cerrada): public/push-sw.js
+        importScripts: ['push-sw.js'],
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {

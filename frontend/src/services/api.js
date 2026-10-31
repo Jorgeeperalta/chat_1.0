@@ -135,6 +135,8 @@ export default {
   put,
   patch,
   del,
+  // Mismo nombre que en axios: los stores llaman api.delete(...)
+  delete: del,
   upload,
   // Exportar instancia para acceso directo
   instance: api,
