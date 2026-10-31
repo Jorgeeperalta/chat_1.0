@@ -10,6 +10,7 @@ const logger = require('../utils/logger');
 const { models } = require('../models');
 const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
+const pushService = require('../services/pushService');
 const { userRoom } = require('../utils/socketRooms');
 
 // Extensión del archivo según el tipo MIME del audio grabado
@@ -267,6 +268,7 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
     });
     socket.emit('message_sent', { success: true, messageId: message.id, clientMessageId, conversationId });
     acknowledge?.({ success: true, messageId: message.id, clientMessageId });
+    pushService.notifyNewMessageInBackground({ io, message });
 
     logger.info(`💬 Mensaje de texto enviado por ${socket.userId} en ${conversationId}`);
 
@@ -393,6 +395,7 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
       audioUrl: audioFile.url,
     });
     acknowledge?.({ success: true, messageId: message.id, clientMessageId, audioUrl: audioFile.url });
+    pushService.notifyNewMessageInBackground({ io, message });
 
     logger.info(`🎤 Mensaje de audio enviado por ${socket.userId} en ${conversationId}`);
   } catch (error) {

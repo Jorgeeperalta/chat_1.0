@@ -30,11 +30,34 @@
           <span v-else class="text-white font-weight-bold">{{ conversationInitials }}</span>
         </v-avatar>
       </v-badge>
-      <div class="conversation-heading">
+      <div
+        class="conversation-heading"
+        :class="{ 'is-clickable': isGroup }"
+        :role="isGroup ? 'button' : undefined"
+        :tabindex="isGroup ? 0 : undefined"
+        @click="isGroup && (membersDialog = true)"
+        @keydown.enter="isGroup && (membersDialog = true)"
+      >
         <h1>{{ conversationTitle }}</h1>
         <span :class="{ 'is-online': isOtherOnline || isTyping }">{{ conversationSubtitle }}</span>
       </div>
+      <v-btn
+        v-if="isGroup"
+        class="ml-auto"
+        icon="mdi-account-group-outline"
+        variant="text"
+        density="comfortable"
+        :aria-label="$t('chat.groupInfo')"
+        :title="$t('chat.groupInfo')"
+        @click="membersDialog = true"
+      />
     </header>
+
+    <GroupMembersDialog
+      v-if="isGroup"
+      v-model="membersDialog"
+      :conversation="currentConversation"
+    />
 
     <!-- Área de mensajes -->
     <div ref="messagesContainer" class="messages-container">
@@ -177,7 +200,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, inject, nextTick } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import { useConversationStore } from '@/stores/conversationStore';
@@ -186,6 +209,7 @@ import { useSocketStore } from '@/stores/socketStore';
 import { useI18n } from 'vue-i18n';
 import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
+import GroupMembersDialog from '@/components/chat/GroupMembersDialog.vue';
 import {
   getOtherUser,
   getConversationTitle,
@@ -205,6 +229,7 @@ const snackbar = inject('snackbar');
 // ============================================
 
 const route = useRoute();
+const router = useRouter();
 const { t, locale } = useI18n();
 const authStore = useAuthStore();
 const userStore = useUserStore();
@@ -229,6 +254,7 @@ const messageToDelete = ref(null);
 const deleting = ref(false);
 const highlightedId = ref(null);
 let highlightTimeout = null;
+const membersDialog = ref(false);
 
 // ============================================
 // COMPUTED
@@ -593,9 +619,16 @@ watch(() => {
 });
 
 // Si las conversaciones se cargan después de abrir la vista, marcar la actual
-watch(currentConversation, (conversation) => {
+watch(currentConversation, (conversation, previous) => {
   if (conversation && Number(conversationStore.currentConversation?.id) !== Number(conversation.id)) {
     conversationStore.setCurrentConversation(conversation);
+  }
+
+  // Un administrador me eliminó del grupo mientras lo tenía abierto
+  if (!conversation && previous?.type === 'group' && Number(previous.id) === Number(conversationId.value)) {
+    membersDialog.value = false;
+    snackbar?.show?.({ text: t('chat.removedFromGroup'), color: 'info' });
+    router.replace({ name: 'home' });
   }
 });
 
@@ -643,6 +676,11 @@ watch(() => conversationId.value, async (newId, oldId) => {
       flex: 1 1 auto;
       flex-direction: column;
       min-width: 0;
+
+      // En grupos abre la lista de integrantes
+      &.is-clickable {
+        cursor: pointer;
+      }
 
       h1 {
         margin: 0;

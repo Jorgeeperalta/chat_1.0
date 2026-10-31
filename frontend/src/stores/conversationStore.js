@@ -495,16 +495,7 @@ export const useConversationStore = defineStore('conversation', () => {
   const deleteConversation = async (conversationId) => {
     try {
       const response = await api.delete(`/api/conversations/${conversationId}`);
-      
-      // Remover de la lista
-      conversations.value = conversations.value.filter(c => Number(c.id) !== Number(conversationId));
-      delete conversationsById.value[conversationId];
-
-      // Si es la conversación actual, limpiarla
-      if (Number(currentConversation.value?.id) === Number(conversationId)) {
-        clearCurrentConversation();
-      }
-
+      removeConversation(conversationId);
       return response.data;
     } catch (err) {
       error.value = err;
@@ -518,12 +509,59 @@ export const useConversationStore = defineStore('conversation', () => {
    */
   const archiveConversation = async (conversationId) => {
     const result = await toggleArchive(conversationId, true);
+    removeConversation(conversationId);
+    return result;
+  };
+
+  /**
+   * Quita una conversación de la lista (eliminada, archivada o me sacaron del grupo)
+   * @param {number} conversationId - ID de la conversación
+   */
+  const removeConversation = (conversationId) => {
     conversations.value = conversations.value.filter(c => Number(c.id) !== Number(conversationId));
     delete conversationsById.value[conversationId];
     if (Number(currentConversation.value?.id) === Number(conversationId)) {
       clearCurrentConversation();
     }
-    return result;
+  };
+
+  /**
+   * Integrantes actualizados de un grupo (respuesta del servidor o evento 'participants_updated').
+   * Conserva mis datos de membresía que esa respuesta no trae (fijado, no leídos...).
+   * @param {Conversation} updated - Conversación con la lista de integrantes nueva
+   */
+  const applyParticipants = (updated) => {
+    const current = conversationsById.value[updated?.id];
+    if (!current || !updated.users) return;
+    const users = updated.users.map(user => {
+      const previous = current.users?.find(u => Number(u.id) === Number(user.id));
+      return previous
+        ? { ...user, UserConversation: { ...previous.UserConversation, ...user.UserConversation } }
+        : user;
+    });
+    updateConversation(updated.id, { users });
+  };
+
+  /**
+   * Agrega integrantes a un grupo (solo administradores)
+   * @param {number} conversationId - ID del grupo
+   * @param {number[]} userIds - IDs de los usuarios
+   */
+  const addParticipants = async (conversationId, userIds) => {
+    const response = await api.post(`/api/conversations/${conversationId}/participants`, { user_ids: userIds });
+    applyParticipants(response.data.conversation);
+    return response.data;
+  };
+
+  /**
+   * Elimina a un integrante de un grupo (solo administradores)
+   * @param {number} conversationId - ID del grupo
+   * @param {number} userId - ID del usuario
+   */
+  const removeParticipant = async (conversationId, userId) => {
+    const response = await api.delete(`/api/conversations/${conversationId}/participants/${userId}`);
+    applyParticipants(response.data.conversation);
+    return response.data;
   };
 
   /**
@@ -589,6 +627,10 @@ export const useConversationStore = defineStore('conversation', () => {
     deleteConversation,
     archiveConversation,
     addConversation,
+    removeConversation,
+    applyParticipants,
+    addParticipants,
+    removeParticipant,
     clear,
   };
 });

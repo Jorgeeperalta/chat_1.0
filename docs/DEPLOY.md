@@ -59,3 +59,23 @@ Si el usuario de la base no tuviera permiso de `ALTER`, Node no arranca y `log.t
 Los navegadores solo permiten grabar audio (`getUserMedia`) en sitios **https**. Por `http://...itempurl.com` el chat de texto funciona, pero el botón de micrófono muestra un aviso.
 
 Para habilitarlo hay que activar SSL en el panel (*SSL Certificate*, por ejemplo Let's Encrypt, normalmente sobre un dominio propio) y después poner `FORCE_HTTPS=true` en el `.env`.
+
+## Notificaciones push (sonido y vibración con la app cerrada)
+
+Cuando alguien no tiene la app a la vista (cerrada, en segundo plano o con la pantalla bloqueada), los mensajes nuevos le llegan como notificación del sistema, con sonido y vibración. Necesitan https.
+
+1. **Claves VAPID** (una sola vez). Generarlas con `npx web-push generate-vapid-keys` (en `backend/`) y agregarlas al `.env` del servidor:
+
+   ```
+   VAPID_PUBLIC_KEY=...
+   VAPID_PRIVATE_KEY=...
+   VAPID_SUBJECT=mailto:admin@converxar.com
+   ```
+
+   No cambiarlas después: las suscripciones están atadas a la clave pública y todos tendrían que volver a activar las notificaciones. Sin estas variables la app funciona igual, pero sin notificaciones push (`logs/app.log` lo avisa al arrancar).
+2. **Tabla**: la app crea `push_subscriptions` sola al arrancar. Si el usuario de la base no tuviera permiso de `CREATE`, ejecutar `migrations/003_push_subscriptions.sql` desde phpMyAdmin.
+3. **En cada teléfono**: en la pantalla de chats aparece "Activar notificaciones". El permiso solo se puede pedir con un toque del usuario.
+   - **Android**: funciona desde Chrome, aunque la app no esté instalada.
+   - **iPhone (iOS 16.4 o más nuevo)**: solo con la app agregada a la pantalla de inicio (Compartir → Agregar a inicio) y abierta desde ahí.
+
+No se envía notificación al remitente, a quien tiene la app a la vista, a quien silenció el chat ni a quien salió del grupo. El sonido y la vibración siguen las preferencias de cada usuario (Ajustes → Notificaciones).

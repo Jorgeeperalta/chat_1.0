@@ -26,6 +26,7 @@ const conversationRoutes = require('./routes/conversationRoutes');
 const messageRoutes = require('./routes/messageRoutes');
 const languageRoutes = require('./routes/languageRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const pushRoutes = require('./routes/pushRoutes');
 
 // Importar middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -141,6 +142,7 @@ app.use('/api/users', authMiddleware.verifyToken, userRoutes);
 app.use('/api/conversations', authMiddleware.verifyToken, conversationRoutes);
 app.use('/api/messages', authMiddleware.verifyToken, messageRoutes);
 app.use('/api/upload', authMiddleware.verifyToken, uploadRoutes);
+app.use('/api/push', authMiddleware.verifyToken, pushRoutes);
 
 // Frontend compilado (producción): se sirve desde el mismo servidor, así la app,
 // la API y Socket.io comparten origen y no hace falta CORS.
@@ -215,6 +217,12 @@ io.on('connection', (socket) => {
   // Evento: mensaje de audio
   socket.on('audio_message', async (data, acknowledge) => {
     await socketMiddleware.handleAudioMessage(socket, data, io, acknowledge);
+  });
+
+  // Evento: la app pasó a segundo plano o volvió a primer plano.
+  // Con la app oculta los mensajes nuevos se avisan con notificaciones push.
+  socket.on('visibility', (data) => {
+    socket.data.visible = data?.visible !== false;
   });
 
   // Evento: usuario está escribiendo

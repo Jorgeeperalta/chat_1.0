@@ -29,6 +29,9 @@
         </v-btn>
       </div>
 
+      <!-- Avisos con la app cerrada (sonido / vibración) -->
+      <PushPermissionBanner />
+
       <!-- Cargando (solo la primera vez, sin datos todavía) -->
       <div v-if="loading && chats.length === 0" class="text-center py-12">
         <v-progress-circular color="primary" indeterminate />
@@ -101,6 +104,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
+import PushPermissionBanner from '@/components/common/PushPermissionBanner.vue';
 import {
   getOtherUser,
   getConversationTitle,

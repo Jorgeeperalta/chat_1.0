@@ -143,6 +143,7 @@ export const useSocketStore = defineStore('socket', () => {
       socketId.value = socket.value.id;
       isConnecting.value = false;
       console.log(`✅ Socket conectado: ${socket.value.id}`);
+      sendVisibility();
       if (activeConversationId.value !== null) {
         socket.value.emit('join', { conversationId: activeConversationId.value });
       }
@@ -202,6 +203,16 @@ export const useSocketStore = defineStore('socket', () => {
       conversationStore.addConversation(data.conversation);
     });
 
+    // Evento: el administrador agregó o quitó integrantes del grupo
+    socket.value.on('participants_updated', (data) => {
+      conversationStore.applyParticipants(data.conversation);
+    });
+
+    // Evento: me eliminaron de un grupo
+    socket.value.on('removed_from_conversation', (data) => {
+      conversationStore.removeConversation(data.conversationId);
+    });
+
     // Evento: usuario se unió a la conversación
     socket.value.on('user_joined', (data) => {
       conversationStore.handleUserJoined(data);
@@ -252,6 +263,18 @@ export const useSocketStore = defineStore('socket', () => {
   /**
    * Desconecta del servidor Socket.io
    */
+  /**
+   * Avisa al servidor si la app está a la vista. Con la app en segundo plano o la
+   * pantalla bloqueada, los mensajes nuevos llegan como notificación push (con sonido y vibración).
+   */
+  const sendVisibility = () => {
+    socket.value?.emit('visibility', { visible: document.visibilityState === 'visible' });
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', sendVisibility);
+  }
+
   const disconnect = () => {
     if (socket.value) {
       socket.value.disconnect();

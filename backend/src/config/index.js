@@ -198,6 +198,17 @@ const config = {
       credentials: process.env.CORS_CREDENTIALS === 'true',
     },
   },
+
+  // ============================================
+  // NOTIFICACIONES PUSH (Web Push)
+  // ============================================
+  // Claves VAPID: se generan una sola vez con "npx web-push generate-vapid-keys".
+  // Si se cambian, los teléfonos deben volver a activar las notificaciones.
+  push: {
+    publicKey: process.env.VAPID_PUBLIC_KEY || '',
+    privateKey: process.env.VAPID_PRIVATE_KEY || '',
+    subject: process.env.VAPID_SUBJECT || 'mailto:admin@converxar.com',
+  },
   
   // ============================================
   // CONFIGURACIÓN DE TRADUCCIÓN

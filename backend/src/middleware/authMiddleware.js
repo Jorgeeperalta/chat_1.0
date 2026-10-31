@@ -261,7 +261,8 @@ const verifyConversationRole = (allowedRoles) => {
       conversationId
     );
 
-    if (!uc || !allowedRoles.includes(uc.role)) {
+    // Quien salió (o fue eliminado) ya no tiene rol en la conversación
+    if (!uc || uc.left_at || !allowedRoles.includes(uc.role)) {
       return res.status(403).json({
         error: 'Forbidden',
         message: `No tienes permisos suficientes en esta conversación (requerido: ${allowedRoles.join(', ')})`,

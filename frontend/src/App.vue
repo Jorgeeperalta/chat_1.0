@@ -74,7 +74,7 @@
       :color="snackbar.color"
       :timeout="snackbar.timeout || 3000"
       :multi-line="snackbar.multiLine"
-      location="bottom"
+      :location="currentRoute.name === 'conversation' ? 'top' : 'bottom'"
     >
       {{ snackbar.text }}
       <template v-slot:actions>
@@ -99,6 +99,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import NotificationBar from '@/components/common/NotificationBar.vue';
 import PwaPrompts from '@/components/common/PwaPrompts.vue';
+import { syncPushSubscription, listenForNotificationClicks } from '@/services/pushNotifications';
 
 // ============================================
 // ESTADO GLOBAL
@@ -114,6 +115,14 @@ const { locale } = useI18n();
 // Aplicar el tema del store a Vuetify
 watch(() => themeStore.isDark, (isDark) => {
   vuetifyTheme.change(isDark ? 'dark' : 'light');
+}, { immediate: true });
+
+// Con sesión iniciada, registrar este teléfono para las notificaciones push
+// (solo si el usuario ya dio permiso; pedirlo es un botón en el inicio)
+watch(() => authStore.isAuthenticated, (authenticated) => {
+  if (authenticated) {
+    syncPushSubscription().catch(error => console.warn('Notificaciones push no disponibles:', error.message));
+  }
 }, { immediate: true });
 
 // Aplicar el idioma de la interfaz a i18n
@@ -234,6 +243,7 @@ onMounted(() => {
 
   // Detectar soporte/permiso de notificaciones del navegador
   notificationStore.initialize();
+  listenForNotificationClicks(router);
 
   // Verificar autenticación al cargar la app
   if (authStore.isAuthenticated) {

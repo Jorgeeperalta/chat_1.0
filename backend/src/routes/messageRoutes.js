@@ -13,6 +13,7 @@ const logger = require('../utils/logger');
 const translationService = require('../services/translationService');
 const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
+const pushService = require('../services/pushService');
 const multer = require('multer');
 
 const upload = multer({
@@ -255,6 +256,8 @@ router.post(
         }
       }
 
+      pushService.notifyNewMessageInBackground({ io: req.app.get('io'), message });
+
       res.status(201).json({
         success: true,
         message: fullMessage,
@@ -364,6 +367,8 @@ router.post(
           );
         }
       }
+
+      pushService.notifyNewMessageInBackground({ io: req.app.get('io'), message });
 
       res.status(201).json({
         success: true,

@@ -8,6 +8,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import api from '@/services/api';
+import { disablePushNotifications } from '@/services/pushNotifications';
 import { useSocketStore } from './socketStore';
 import { useUserStore } from './userStore';
 
@@ -229,6 +230,9 @@ export const useAuthStore = defineStore('auth', () => {
   const logout = async () => {
     try {
       isLoading.value = true;
+
+      // Este teléfono deja de recibir notificaciones de esta cuenta (antes de perder el token)
+      await disablePushNotifications();
       
       // Cerrar sesión en el backend
       await api.post('/api/auth/logout', {}, {
