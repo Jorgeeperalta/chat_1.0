@@ -139,6 +139,7 @@ const errorHandler = (error, req, res, next) => {
     statusCode = 400;
     message = error.message;
     if (error.code === 'LIMIT_FILE_SIZE') {
+      statusCode = 413; // la app lo muestra como "archivo demasiado grande"
       message = `El archivo es demasiado grande. Máximo permitido: ${storageService.localConfig.maxFileSizeMB}MB`;
     } else if (error.code === 'LIMIT_UNEXPECTED_FILE') {
       message = 'Se esperaba un archivo pero no se proporcionó';

@@ -99,3 +99,28 @@ describe('MessageBubble', () => {
     wrapper.unmount();
   });
 });
+
+describe('MessageBubble: estado de los mensajes propios', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    useAuthStore().user = ME;
+    document.body.innerHTML = '';
+  });
+
+  it.each([
+    ['sending', 'mdi-clock-outline'],
+    ['sent', 'mdi-check'],
+    ['delivered', 'mdi-check-all'],
+    ['read', 'mdi-check-all'],
+  ])('%s muestra %s', (status, icon) => {
+    const wrapper = mountBubble({ id: 20, sender_id: 1, sender: ME, content: 'hola' }, { status, compact: true });
+    const statusIcon = wrapper.find('.message-status');
+    expect(statusIcon.classes()).toContain(icon);
+    expect(statusIcon.classes()).toContain(`message-status--${status}`);
+  });
+
+  it('no muestra estado en los mensajes de otros', () => {
+    const wrapper = mountBubble({ id: 21, sender_id: 2, sender: ANA, content: 'hola' }, { status: 'read' });
+    expect(wrapper.find('.message-status').exists()).toBe(false);
+  });
+});

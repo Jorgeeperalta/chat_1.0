@@ -13,6 +13,7 @@ import { useConversationStore } from './conversationStore';
 import { useSocketStore } from './socketStore';
 import { useTranslationStore } from './translationStore';
 import { resolveMediaUrl } from '@/utils/media';
+import { t } from '@/i18n';
 
 // El backend serializa los mensajes por socket con un límite de 10 MB (base64 ≈ +33 %)
 const MAX_AUDIO_BYTES = 7 * 1024 * 1024;
@@ -83,6 +84,8 @@ export const useChatStore = defineStore('chat', () => {
   const isLoading = ref(false);
   const error = ref(null);
   const messagesTotal = ref({});
+  // Hasta qué mensaje le llegó / vio cada integrante: { [conversationId]: { [userId]: { delivered, read } } }
+  const receiptsByConversation = ref({});
 
   // ============================================
   // GETTERS
@@ -195,6 +198,7 @@ export const useChatStore = defineStore('chat', () => {
       if (response.data.total != null) {
         messagesTotal.value[conversationKey] = response.data.total;
       }
+      if (response.data.receipts) setReceipts(conversationKey, response.data.receipts);
       const otherConversationMessages = messages.value.filter(
         message => Number(message.conversation_id) !== conversationKey
       );
@@ -251,6 +255,7 @@ export const useChatStore = defineStore('chat', () => {
       if (response.data.total != null) {
         messagesTotal.value[conversationKey] = response.data.total;
       }
+      if (response.data.receipts) setReceipts(conversationKey, response.data.receipts);
 
       const newMessages = response.data.messages
         .filter(msg => !messagesById.value[msg.id])
@@ -386,6 +391,10 @@ export const useChatStore = defineStore('chat', () => {
       conversation_id: conversationId,
       type: message.type || (message.message_type === 'audio' ? 'voice' : message.message_type),
       audio_url: resolveMediaUrl(message.audio_url),
+      attachments: message.attachments?.map(attachment => ({
+        ...attachment,
+        file_url: resolveMediaUrl(attachment.file_url),
+      })),
       duration: message.duration ?? message.audio_duration,
       transcription: message.transcription ?? message.audio_transcription,
       sender,
@@ -413,7 +422,7 @@ export const useChatStore = defineStore('chat', () => {
     if (messageDate >= today) {
       return messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (messageDate >= yesterday) {
-      return 'Ayer';
+      return t('chat.yesterday');
     } else if (messageDate >= new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000)) {
       return messageDate.toLocaleDateString([], { weekday: 'short' });
     } else {
@@ -477,6 +486,53 @@ export const useChatStore = defineStore('chat', () => {
    * Maneja el acuse de lectura de mensaje
    * @param {Object} data - Datos del mensaje
    */
+  // ---- Estados de los mensajes propios: enviando / ✓ enviado / ✓✓ entregado / ✓✓ visto ----
+
+  const toReceipt = (receipt) => ({
+    delivered: Number(receipt.last_delivered_message_id) || 0,
+    read: Number(receipt.last_read_message_id) || 0,
+  });
+
+  const setReceipts = (conversationId, receipts) => {
+    receiptsByConversation.value[Number(conversationId)] = Object.fromEntries(
+      receipts.map(receipt => [Number(receipt.user_id), toReceipt(receipt)])
+    );
+  };
+
+  // Evento 'receipts_updated': a alguien le llegaron o vio mensajes
+  const applyReceipt = ({ conversationId, receipt }) => {
+    const key = Number(conversationId);
+    receiptsByConversation.value[key] = {
+      ...(receiptsByConversation.value[key] || {}),
+      [Number(receipt.user_id)]: toReceipt(receipt),
+    };
+  };
+
+  /**
+   * Estado de un mensaje propio. En un grupo cuenta el que va más atrás:
+   * "visto" recién cuando lo vieron todos, como en WhatsApp.
+   * @returns {'sending'|'failed'|'sent'|'delivered'|'read'}
+   */
+  const getMessageStatus = (message) => {
+    if (message.id == null) return message.status === 'failed' ? 'failed' : 'sending';
+
+    const conversationId = Number(message.conversation_id);
+    const receipts = receiptsByConversation.value[conversationId] || {};
+    const me = Number(authStore.user?.id);
+    // Solo los integrantes actuales (quien salió del grupo ya no cuenta)
+    const members = conversationStore.conversationsById[conversationId]?.users;
+    const memberIds = members ? new Set(members.map(user => Number(user.id))) : null;
+    const others = Object.entries(receipts)
+      .filter(([userId]) => Number(userId) !== me && (!memberIds || memberIds.has(Number(userId))))
+      .map(([, receipt]) => receipt);
+
+    if (!others.length) return 'sent';
+    const id = Number(message.id);
+    if (others.every(receipt => receipt.read >= id)) return 'read';
+    if (others.every(receipt => Math.max(receipt.delivered, receipt.read) >= id)) return 'delivered';
+    return 'sent';
+  };
+
   const handleMessageRead = (data) => {
     const message = messagesById.value[data.messageId];
     
@@ -582,11 +638,11 @@ export const useChatStore = defineStore('chat', () => {
     let tempId;
     try {
       if (!currentConversationId.value) {
-        throw new Error('No hay una conversación seleccionada');
+        throw new Error(t('errors.noConversation'));
       }
       
       if (!content.trim()) {
-        throw new Error('El mensaje no puede estar vacío');
+        throw new Error(t('errors.emptyMessage'));
       }
       
       // Crear mensaje temporal
@@ -628,6 +684,72 @@ export const useChatStore = defineStore('chat', () => {
       }
       error.value = err;
       throw err;
+    }
+  };
+
+  /**
+   * Envía una foto, video o documento. Se muestra al instante (con la imagen local y el
+   * progreso de subida) y se reemplaza por el mensaje del servidor al terminar.
+   * @param {File} file - Archivo ya validado (y comprimido, si es foto)
+   * @param {Object} [options]
+   * @param {Object} [options.replyTo] - Mensaje al que responde
+   * @returns {Promise<Object>} Mensaje creado
+   */
+  const sendAttachment = async (file, { replyTo = null } = {}) => {
+    const conversationId = currentConversationId.value;
+    if (!conversationId) throw new Error(t('errors.noConversation'));
+
+    const kind = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'file';
+    const localUrl = kind === 'file' ? null : URL.createObjectURL(file);
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    messages.value.push({
+      tempId,
+      conversation_id: conversationId,
+      sender_id: authStore.user?.id,
+      type: kind,
+      message_type: kind,
+      content: null,
+      attachments: [{
+        file_name: file.name,
+        file_url: localUrl,
+        file_type: kind,
+        file_size: file.size,
+        mime_type: file.type,
+      }],
+      created_at: new Date().toISOString(),
+      sender: authStore.user,
+      isCurrentUser: true,
+      status: 'sending',
+      uploadProgress: 0,
+      ...replyFields(replyTo),
+    });
+    // El objeto reactivo (el que ve la vista), para ir actualizando el progreso
+    const pending = messages.value[messages.value.length - 1];
+
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('client_message_id', tempId);
+    if (replyTo?.id) form.append('reply_to_message_id', String(replyTo.id));
+
+    try {
+      const response = await api.post(`/api/messages/${conversationId}/attachment`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        // Un video con datos móviles puede tardar bastante más que los 30 s por defecto
+        timeout: 5 * 60 * 1000,
+        onUploadProgress: (event) => {
+          if (event.total) pending.uploadProgress = Math.round((event.loaded / event.total) * 100);
+        },
+      });
+      // Puede haber llegado antes por Socket.io (y ya reemplazó al provisorio)
+      addTextMessage({ message: response.data.message, conversationId, clientMessageId: tempId });
+      return response.data.message;
+    } catch (err) {
+      messages.value = messages.value.filter(message => message.tempId !== tempId);
+      error.value = err;
+      throw err;
+    } finally {
+      if (localUrl) URL.revokeObjectURL(localUrl);
     }
   };
 
@@ -718,15 +840,15 @@ export const useChatStore = defineStore('chat', () => {
     let localUrl;
     try {
       if (!currentConversationId.value) {
-        throw new Error('No hay una conversación seleccionada');
+        throw new Error(t('errors.noConversation'));
       }
 
       if (!audioBlob || audioBlob.size === 0) {
-        throw new Error('La grabación está vacía');
+        throw new Error(t('chat.voice.empty'));
       }
 
       if (audioBlob.size > MAX_AUDIO_BYTES) {
-        throw new Error('El audio es demasiado largo para enviarlo');
+        throw new Error(t('chat.voice.tooLong'));
       }
 
       // Tipo base sin parámetros de codec (p. ej. "audio/webm;codecs=opus" -> "audio/webm")
@@ -796,7 +918,7 @@ export const useChatStore = defineStore('chat', () => {
         const base64 = reader.result.split(',')[1];
         resolve(base64);
       };
-      reader.onerror = () => reject(reader.error || new Error('No se pudo leer el audio'));
+      reader.onerror = () => reject(reader.error || new Error(t('chat.voice.readError')));
       reader.readAsDataURL(blob);
     });
   };
@@ -878,7 +1000,7 @@ export const useChatStore = defineStore('chat', () => {
       pendingMessages.value = pendingMessages.value.filter(item => item.tempId !== message.tempId);
     }
     if (!message.content) {
-      throw new Error('Solo se pueden reintentar mensajes de texto');
+      throw new Error(t('errors.onlyTextRetry'));
     }
     return sendTextMessage(message.content, { replyTo: message.replyTo });
   };
@@ -891,7 +1013,7 @@ export const useChatStore = defineStore('chat', () => {
   const editMessage = async (messageId, content) => {
     try {
       const text = content.trim();
-      if (!text) throw new Error('El mensaje no puede estar vacío');
+      if (!text) throw new Error(t('errors.emptyMessage'));
 
       const response = await api.patch(`/api/messages/${messageId}`, { content: text });
       applyMessageUpdate(response.data.message);
@@ -914,7 +1036,7 @@ export const useChatStore = defineStore('chat', () => {
       const message = messagesById.value[messageId];
 
       if (!message) {
-        throw new Error('Mensaje no encontrado');
+        throw new Error(t('errors.messageNotFound'));
       }
 
       await api.delete(`/api/messages/${messageId}`);
@@ -966,6 +1088,7 @@ export const useChatStore = defineStore('chat', () => {
     playingAudioUrl.value = '';
     error.value = null;
     messagesTotal.value = {};
+    receiptsByConversation.value = {};
 
     if (recordingInterval.value) {
       clearInterval(recordingInterval.value);
@@ -1017,6 +1140,9 @@ export const useChatStore = defineStore('chat', () => {
     handleUserTyping,
     sendTyping,
     handleMessageRead,
+    applyReceipt,
+    getMessageStatus,
+    sendAttachment,
     handleMessageSent,
     sendTextMessage,
     startRecording,

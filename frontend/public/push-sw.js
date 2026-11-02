@@ -3,6 +3,21 @@
  * (workbox.importScripts en vite.config.js). Corre aunque la app esté cerrada.
  */
 
+// Textos en el idioma del teléfono (los mismos idiomas que la app)
+const TEXTS = {
+  es: { newMessage: 'Tienes un mensaje nuevo', audio: 'Mensaje de voz', image: 'Foto', video: 'Video', file: 'Archivo' },
+  en: { newMessage: 'You have a new message', audio: 'Voice message', image: 'Photo', video: 'Video', file: 'File' },
+  pt: { newMessage: 'Você tem uma nova mensagem', audio: 'Mensagem de voz', image: 'Foto', video: 'Vídeo', file: 'Arquivo' },
+  fr: { newMessage: 'Vous avez un nouveau message', audio: 'Message vocal', image: 'Photo', video: 'Vidéo', file: 'Fichier' },
+  de: { newMessage: 'Du hast eine neue Nachricht', audio: 'Sprachnachricht', image: 'Foto', video: 'Video', file: 'Datei' },
+  it: { newMessage: 'Hai un nuovo messaggio', audio: 'Messaggio vocale', image: 'Foto', video: 'Video', file: 'File' },
+};
+const ICONS = { audio: '🎤', image: '📷', video: '🎥', file: '📎' };
+const text = (key) => {
+  const language = String(self.navigator?.language || 'en').toLowerCase().split('-')[0];
+  return (TEXTS[language] || TEXTS.en)[key];
+};
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -11,12 +26,15 @@ self.addEventListener('push', (event) => {
     data = { body: event.data ? event.data.text() : '' };
   }
 
-  const title = data.title || 'Converxa';
+  const title = data.title || 'Converxar';
+  // Voz, foto, video o archivo: se nombra en el idioma del teléfono (y se suma el texto, si tiene)
+  const media = ICONS[data.kind] && `${ICONS[data.kind]} ${data.caption || text(data.kind)}`;
+  const body = media ? `${data.sender ? `${data.sender}: ` : ''}${media}` : data.body;
   const options = {
-    body: data.body || 'Tienes un mensaje nuevo',
+    body: body || text('newMessage'),
     icon: '/icons/pwa-192x192.png',
     badge: '/icons/pwa-192x192.png',
-    tag: data.tag || 'converxa',
+    tag: data.tag || 'converxar',
     // Aunque reemplace a la notificación anterior del mismo chat, vuelve a sonar y vibrar
     renotify: true,
     silent: data.silent === true,

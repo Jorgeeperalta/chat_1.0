@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS user_conversations (
     is_pinned BOOLEAN DEFAULT FALSE,
     unread_count INT DEFAULT 0,
     last_read_message_id INT DEFAULT NULL,
+    last_delivered_message_id INT DEFAULT NULL,
     
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,

@@ -55,7 +55,8 @@ module.exports = (sequelize, DataTypes) => {
         field: 'file_url',
         validate: {
           notEmpty: true,
-          isUrl: true,
+          // Ruta del almacenamiento local (/uploads/...) o URL absoluta (S3)
+          is: /^(\/uploads\/|https?:\/\/)/,
         },
       },
       file_type: {

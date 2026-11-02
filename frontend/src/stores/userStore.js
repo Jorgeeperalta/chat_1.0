@@ -8,6 +8,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import api from '@/services/api';
 import { useTranslationStore } from './translationStore';
+import { t } from '@/i18n';
 
 /**
  * @typedef {Object} User
@@ -167,7 +168,7 @@ export const useUserStore = defineStore('user', () => {
    * @returns {Promise<Object>}
    */
   const updateSettings = async (newSettings, userId = currentUser.value?.id) => {
-    if (!userId) throw new Error('No hay un usuario autenticado');
+    if (!userId) throw new Error(t('errors.notLoggedIn'));
     const merged = { ...settings.value, ...newSettings };
     const response = await api.post(
       `/api/users/${userId}/preferences`,

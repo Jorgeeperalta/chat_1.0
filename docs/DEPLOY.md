@@ -1,4 +1,4 @@
-# Despliegue de Converxa en SmarterASP.NET
+# Despliegue de Converxar en SmarterASP.NET
 
 Sitio: http://jorgeperalta-001-site4.itempurl.com/
 
@@ -43,7 +43,13 @@ Subir **el contenido** de `deploy-hosting/` a `www\whatsapp` por FTP o con el *F
 
 Al arrancar, la app agrega sola las columnas nuevas que necesita (`ensureSchema` en `backend/src/models/index.js`). Por ejemplo, la versión con respuestas a mensajes crea `messages.reply_to_message_id`. No hay que correr SQL a mano.
 
-Si el usuario de la base no tuviera permiso de `ALTER`, Node no arranca y `log.txt` (o `logs/app.log`) lo indica. En ese caso, ejecutar `migrations/002_reply_to_message.sql` desde phpMyAdmin y reciclar el sitio.
+Los cambios que aplica sola, en orden:
+
+- `002_reply_to_message.sql`: respuestas a mensajes.
+- `003_push_subscriptions.sql`: notificaciones push.
+- `004_message_receipts.sql`: estados de los mensajes (entregado / visto).
+
+Si el usuario de la base no tuviera permiso de `ALTER`/`CREATE`, Node no arranca y `log.txt` (o `logs/app.log`) lo indica. En ese caso, ejecutar desde phpMyAdmin los archivos de `migrations/` que falten y reciclar el sitio.
 
 ## 4. Verificar
 

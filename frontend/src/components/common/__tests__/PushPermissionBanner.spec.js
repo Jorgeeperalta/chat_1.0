@@ -26,7 +26,7 @@ const i18n = createI18n({
         enable: 'Activar notificaciones',
         enabled: 'Notificaciones activadas',
         denied: 'Las notificaciones están bloqueadas',
-        install: 'En iPhone, agrega Converxa a la pantalla de inicio',
+        install: 'En iPhone, agrega Converxar a la pantalla de inicio',
       },
     },
   },

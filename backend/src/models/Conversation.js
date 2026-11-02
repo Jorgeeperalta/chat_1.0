@@ -4,7 +4,7 @@
  * @author Arquitecto de Software Senior
  */
 
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 
 /**
  * @typedef {Object} ConversationAttributes
@@ -192,9 +192,9 @@ module.exports = (sequelize, DataTypes) => {
     const where = { is_archived: archived || false };
     if (type) where.type = type;
     if (search) {
-      where[sequelize.Op.or] = [
-        { name: { [sequelize.Op.iLike]: `%${search}%` } },
-        { description: { [sequelize.Op.iLike]: `%${search}%` } },
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { description: { [Op.like]: `%${search}%` } },
       ];
     }
 

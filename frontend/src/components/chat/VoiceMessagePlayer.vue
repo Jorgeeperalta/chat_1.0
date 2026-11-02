@@ -23,7 +23,7 @@
       variant="flat"
       :loading="isLoading"
       :disabled="isError"
-      :aria-label="playing ? 'Pausar audio' : 'Reproducir audio'"
+      :aria-label="playing ? $t('chat.voice.pause') : $t('chat.voice.play')"
       @click.stop="togglePlay"
     >
       <v-icon :icon="isError ? 'mdi-alert-circle-outline' : (playing ? 'mdi-pause' : 'mdi-play')" />
@@ -34,7 +34,7 @@
       <div
         class="waveform"
         role="slider"
-        aria-label="Posición del audio"
+        :aria-label="$t('chat.voice.position')"
         :aria-valuenow="Math.round(progress)"
         aria-valuemin="0"
         aria-valuemax="100"
@@ -52,7 +52,7 @@
       <!-- Tiempo -->
       <div class="player-meta">
         <span class="time-text">
-          {{ isError ? 'No se pudo cargar el audio' : (playing || currentTime > 0 ? formattedCurrentTime : formattedDuration) }}
+          {{ isError ? $t('chat.voice.loadError') : (playing || currentTime > 0 ? formattedCurrentTime : formattedDuration) }}
         </span>
         <button
           v-if="!isError"

@@ -4,7 +4,7 @@
  * @author Arquitecto de Software Senior
  */
 
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 
 /**
  * @typedef {Object} UserSessionAttributes
@@ -230,7 +230,7 @@ module.exports = (sequelize, DataTypes) => {
       {
         where: {
           status: 'active',
-          expires_at: { [sequelize.Op.lt]: now },
+          expires_at: { [Op.lt]: now },
         },
       }
     );
@@ -239,7 +239,7 @@ module.exports = (sequelize, DataTypes) => {
     return this.destroy({
       where: {
         status: 'expired',
-        updated_at: { [sequelize.Op.lt]: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) }, // 30 días
+        updated_at: { [Op.lt]: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) }, // 30 días
       },
     });
   };

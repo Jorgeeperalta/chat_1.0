@@ -11,6 +11,7 @@ const { models } = require('../models');
 const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
 const pushService = require('../services/pushService');
+const receiptService = require('../services/receiptService');
 const { userRoom } = require('../utils/socketRooms');
 
 // Extensión del archivo según el tipo MIME del audio grabado
@@ -128,11 +129,9 @@ const handleJoin = async (socket, data, acknowledge) => {
     joinAcknowledged = true;
     logger.info(`📡 Socket ${socket.id} unido a sala ${conversationRoom}`);
 
-    // Actualizar socket_id en la relación usuario-conversación
-    await models.UserConversation.update(
-      { last_read_message_id: null },
-      { where: { user_id: socket.userId, conversation_id: conversationId } }
-    );
+    // Abrir el chat = ver sus mensajes (✓✓ azul para quien los envió).
+    // Antes acá se borraba last_read_message_id, y los "no leídos" quedaban mal.
+    await receiptService.markConversationRead(socket.nsp, socket.userId, conversationId);
 
     // Notificar a otros usuarios
     socket.to(conversationRoom).emit('user_joined', {
@@ -268,6 +267,7 @@ const handleTextMessage = async (socket, data, io, acknowledge) => {
     });
     socket.emit('message_sent', { success: true, messageId: message.id, clientMessageId, conversationId });
     acknowledge?.({ success: true, messageId: message.id, clientMessageId });
+    receiptService.onNewMessageInBackground({ io, message });
     pushService.notifyNewMessageInBackground({ io, message });
 
     logger.info(`💬 Mensaje de texto enviado por ${socket.userId} en ${conversationId}`);
@@ -395,6 +395,7 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
       audioUrl: audioFile.url,
     });
     acknowledge?.({ success: true, messageId: message.id, clientMessageId, audioUrl: audioFile.url });
+    receiptService.onNewMessageInBackground({ io, message });
     pushService.notifyNewMessageInBackground({ io, message });
 
     logger.info(`🎤 Mensaje de audio enviado por ${socket.userId} en ${conversationId}`);
@@ -435,12 +436,8 @@ const handleMessageRead = async (socket, data, io) => {
       throw new Error('El mensaje no pertenece a esta conversación');
     }
 
-    // Actualizar el último mensaje leído
-    await models.UserConversation.updateLastReadMessage(
-      socket.userId,
-      conversationId,
-      messageId
-    );
+    // Actualizar el último mensaje leído (y avisar el ✓✓ azul)
+    await receiptService.markRead(io, socket.userId, conversationId, message.id);
 
     // Marcar el mensaje como leído
     await models.Message.markAsRead(messageId);
@@ -466,7 +463,7 @@ const handleMessageRead = async (socket, data, io) => {
  * @param {Object} socket - Socket
  * @param {Object} data - Datos del evento
  */
-const handleMessageDelivered = async (socket, data) => {
+const handleMessageDelivered = async (socket, data, io) => {
   try {
     const { messageId } = data;
 
@@ -474,7 +471,11 @@ const handleMessageDelivered = async (socket, data) => {
       throw new Error('messageId es requerido');
     }
 
+    const message = await models.Message.findByPk(messageId, { attributes: ['id', 'conversation_id'] });
+    if (!message) throw new Error('Mensaje no encontrado');
+
     await models.Message.markAsDelivered(messageId);
+    await receiptService.markDelivered(io, socket.userId, message.conversation_id, message.id);
 
     logger.info(`✅ Mensaje ${messageId} marcado como entregado`);
   } catch (error) {
@@ -512,8 +513,28 @@ const handleConnect = async (socket, io) => {
       { where: { id: socket.userId } }
     );
     await broadcastUserStatus(io, socket.userId, 'online', lastSeenAt);
+
+    // Con la app abierta le llegan los mensajes que tenía pendientes (✓✓ para quien los envió)
+    await receiptService.markAllDeliveredOnConnect(io, socket.userId);
   } catch (error) {
     logger.error(`❌ Error al marcar en línea al usuario ${socket.userId}: ${error.message}`);
+  }
+};
+
+/**
+ * La app volvió a primer plano: si tiene un chat abierto, ya vio lo que llegó mientras tanto
+ * @param {Object} socket - Socket
+ * @param {Object} io - Instancia de Socket.io
+ */
+const handleVisible = async (socket, io) => {
+  try {
+    // Las salas de conversación se llaman con su ID numérico (las demás: el ID del socket y user:N)
+    const conversationIds = [...socket.rooms].filter(room => /^\d+$/.test(room));
+    for (const conversationId of conversationIds) {
+      await receiptService.markConversationRead(io, socket.userId, conversationId);
+    }
+  } catch (error) {
+    logger.error(`❌ Error al marcar mensajes vistos: ${error.message}`);
   }
 };
 
@@ -620,6 +641,7 @@ module.exports = {
   handleAudioMessage,
   handleMessageRead,
   handleMessageDelivered,
+  handleVisible,
   handleDisconnect,
   handleUserStatusChanged,
   getOnlineUsersInConversation,

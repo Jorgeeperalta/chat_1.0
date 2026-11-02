@@ -126,6 +126,7 @@
             :show-timestamp="isFirstInGroup(message, index)"
             :can-edit="canEdit(message)"
             :can-delete="canDelete(message)"
+            :status="isOwnMessage(message) ? chatStore.getMessageStatus(message) : ''"
             :highlighted="highlightedId === message.id"
             @reply="handleReply"
             @edit="handleEdit"
@@ -143,7 +144,7 @@
         <MessageBubble
           :message="{
             type: 'system',
-            content: `${typingUser} está escribiendo...`,
+            content: $t('chat.isTyping', { name: typingUser }),
           }"
           compact
         />
@@ -176,6 +177,7 @@
         :has-voice-capability="!editingMessage"
         @send="sendMessage"
         @send:voice="sendVoiceMessage"
+        @send:file="sendFiles"
         @change="handleTyping"
         @keydown.esc="cancelComposerContext"
       />
@@ -210,11 +212,13 @@ import { useI18n } from 'vue-i18n';
 import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
 import GroupMembersDialog from '@/components/chat/GroupMembersDialog.vue';
+import { compressImage } from '@/utils/imageCompression';
 import {
   getOtherUser,
   getConversationTitle,
   getInitials,
   formatRelativeTime,
+  getMessagePreview,
 } from '@/utils/conversationDisplay';
 
 // ============================================
@@ -350,7 +354,7 @@ const formatDate = (dateString) => {
   if (diffInHours < 24) {
     return date.toLocaleDateString([], { weekday: 'long' });
   } else if (diffInHours < 48) {
-    return 'Ayer';
+    return t('chat.yesterday');
   } else if (diffInHours < 7 * 24) {
     return date.toLocaleDateString([], { weekday: 'short' });
   } else {
@@ -379,7 +383,7 @@ const loadMoreMessages = async () => {
     }
   } catch (error) {
     console.error('Error al cargar más mensajes:', error);
-    snackbar?.error('Error al cargar más mensajes');
+    snackbar?.error(t('chat.loadMoreError'));
   } finally {
     loadingMore.value = false;
   }
@@ -409,8 +413,7 @@ const replyAuthor = computed(() => {
 const contextText = computed(() => {
   const message = editingMessage.value || replyingTo.value;
   if (!message) return '';
-  if (message.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
-  return message.content || '';
+  return getMessagePreview(message);
 });
 
 const cancelComposerContext = () => {
@@ -448,7 +451,7 @@ const confirmDelete = async () => {
     deleteDialog.value = false;
   } catch (error) {
     console.error('Error al eliminar mensaje:', error);
-    snackbar?.error(error?.response?.data?.message || 'No se pudo eliminar el mensaje');
+    snackbar?.error(error?.response?.data?.message || t('chat.deleteError'));
   } finally {
     deleting.value = false;
     messageToDelete.value = null;
@@ -513,7 +516,7 @@ const sendMessage = async ({ content }) => {
       await chatStore.editMessage(message.id, content);
     } catch (error) {
       console.error('Error al editar mensaje:', error);
-      snackbar?.error(error?.response?.data?.message || error.message || 'No se pudo editar el mensaje');
+      snackbar?.error(error?.response?.data?.message || error.message || t('chat.editError'));
     }
     return;
   }
@@ -525,7 +528,7 @@ const sendMessage = async ({ content }) => {
     scrollToBottom();
   } catch (error) {
     console.error('Error al enviar mensaje:', error);
-    snackbar?.error(error.message || 'No se pudo enviar el mensaje');
+    snackbar?.error(error.message || t('chat.sendError'));
   }
 };
 
@@ -537,13 +540,46 @@ const sendVoiceMessage = async (audio, duration) => {
     scrollToBottom();
   } catch (error) {
     console.error('Error al enviar audio:', error);
-    snackbar?.error(error.message || 'No se pudo enviar el audio');
+    snackbar?.error(error.message || t('chat.sendAudioError'));
+  }
+};
+
+// Mismo límite que el servidor (MAX_FILE_SIZE_MB en el .env del backend)
+const MAX_FILE_MB = Number(import.meta.env.VITE_MAX_FILE_SIZE_MB) || 10;
+
+/**
+ * Fotos, videos o documentos elegidos (o la foto recién sacada con la cámara).
+ * Se envían de a uno; las fotos se achican antes de subirlas.
+ */
+const sendFiles = async (files) => {
+  let replyTo = replyingTo.value;
+  replyingTo.value = null;
+
+  for (const original of files) {
+    const file = original.type.startsWith('image/') ? await compressImage(original) : original;
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      snackbar?.error(t('chat.attach.tooLarge', { name: original.name, max: MAX_FILE_MB }));
+      continue;
+    }
+    try {
+      const sending = chatStore.sendAttachment(file, { replyTo });
+      replyTo = null; // la respuesta va solo en el primero
+      scrollToBottom();
+      await sending;
+    } catch (error) {
+      console.error('Error al enviar archivo:', error);
+      const status = error?.response?.status;
+      const reason = status === 415 ? t('chat.attach.notAllowed', { name: original.name })
+        : status === 413 ? t('chat.attach.tooLarge', { name: original.name, max: MAX_FILE_MB })
+          : t('chat.attach.error', { name: original.name });
+      snackbar?.error(reason);
+    }
   }
 };
 
 const getUserName = (user) => {
-  if (!user) return 'Alguien';
-  return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'Usuario';
+  if (!user) return t('chat.someone');
+  return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || t('chat.user');
 };
 
 /**
@@ -563,14 +599,14 @@ const openConversation = async (id) => {
     await socketStore.joinConversation(id);
   } catch (error) {
     console.error('Error al conectar con el chat:', error);
-    snackbar?.error('Sin conexión al chat. Puedes escribir y volver a intentar enviar.');
+    snackbar?.error(t('chat.connectionError'));
   }
   try {
     await chatStore.fetchMessages(id);
     scrollToBottom();
   } catch (error) {
     console.error('Error al cargar mensajes:', error);
-    snackbar?.error('No se pudieron cargar los mensajes');
+    snackbar?.error(t('chat.loadMessagesError'));
   }
 
   // Marcar la conversación como leída

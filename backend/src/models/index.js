@@ -161,7 +161,7 @@ const sync = async (options = {}) => {
 
 /**
  * Aplica los cambios de esquema que el código necesita y que una base existente puede no tener
- * (equivale a migrations/002_reply_to_message.sql y 003_push_subscriptions.sql). Es idempotente: si ya están, no hace nada.
+ * (equivale a migrations/002, 003 y 004). Es idempotente: si ya están, no hace nada.
  * Así basta con subir el código al hosting, sin correr SQL a mano.
  */
 const ensureSchema = async () => {
@@ -184,6 +184,24 @@ const ensureSchema = async () => {
     // esta migración (si la columna ya existía, no se vuelve a ejecutar).
     await sequelize.query('UPDATE messages SET is_edited = FALSE WHERE is_edited = TRUE');
     console.log('✅ Columna messages.reply_to_message_id creada');
+  }
+
+  // Estados de los mensajes (enviado / entregado / visto)
+  const membershipColumns = await queryInterface.describeTable('user_conversations');
+  if (!membershipColumns.last_delivered_message_id) {
+    await queryInterface.addColumn('user_conversations', 'last_delivered_message_id', {
+      type: Sequelize.DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      after: 'last_read_message_id',
+    });
+    // Los mensajes que ya existían se consideran entregados (ya estaban en el historial de cada uno)
+    await sequelize.query(
+      `UPDATE user_conversations uc
+         JOIN conversations c ON c.id = uc.conversation_id
+          SET uc.last_delivered_message_id = c.last_message_id`
+    );
+    console.log('✅ Columna user_conversations.last_delivered_message_id creada');
   }
 
   // Notificaciones push: sync() solo crea la tabla si no existe (no modifica una existente)

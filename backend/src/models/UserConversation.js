@@ -19,6 +19,7 @@ const { DataTypes, Op } = require('sequelize');
  * @property {boolean} is_pinned - Si está fijado
  * @property {number} unread_count - Cantidad de mensajes no leídos
  * @property {number} last_read_message_id - ID del último mensaje leído
+ * @property {number} last_delivered_message_id - ID del último mensaje que llegó a su teléfono/navegador
  */
 
 /**
@@ -100,6 +101,13 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: true,
         defaultValue: null,
         field: 'last_read_message_id',
+      },
+      // Estados de los mensajes: entregado (✓✓) hasta este ID, visto (✓✓ azul) hasta last_read_message_id
+      last_delivered_message_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        field: 'last_delivered_message_id',
       },
     },
     {
@@ -201,9 +209,18 @@ module.exports = (sequelize, DataTypes) => {
    * @returns {Promise<void>}
    */
   UserConversation.updateLastReadMessage = async function (userId, conversationId, messageId) {
+    const { Op } = require('sequelize');
+    await this.update({ unread_count: 0 }, { where: { user_id: userId, conversation_id: conversationId } });
+    // Solo avanza: ver un mensaje viejo no "desmarca" como vistos los más nuevos
     await this.update(
-      { last_read_message_id: messageId, unread_count: 0 },
-      { where: { user_id: userId, conversation_id: conversationId } }
+      { last_read_message_id: messageId },
+      {
+        where: {
+          user_id: userId,
+          conversation_id: conversationId,
+          [Op.or]: [{ last_read_message_id: null }, { last_read_message_id: { [Op.lt]: messageId } }],
+        },
+      }
     );
   };
 

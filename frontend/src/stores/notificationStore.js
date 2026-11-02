@@ -9,6 +9,7 @@ import { ref, computed } from 'vue';
 import { useAuthStore } from './authStore';
 import { useTranslationStore } from './translationStore';
 import { useConversationStore } from './conversationStore';
+import { t } from '@/i18n';
 
 /**
  * @typedef {Object} Notification
@@ -225,7 +226,7 @@ export const useNotificationStore = defineStore('notification', () => {
    * @param {string} message - Mensaje
    * @param {string} title - Título (opcional)
    */
-  const success = (message, title = 'Success') => {
+  const success = (message, title = t('common.success')) => {
     addNotification({
       title,
       body: message,
@@ -239,7 +240,7 @@ export const useNotificationStore = defineStore('notification', () => {
    * @param {string} message - Mensaje
    * @param {string} title - Título (opcional)
    */
-  const error = (message, title = 'Error') => {
+  const error = (message, title = t('common.error')) => {
     addNotification({
       title,
       body: message,
@@ -254,7 +255,7 @@ export const useNotificationStore = defineStore('notification', () => {
    * @param {string} message - Mensaje
    * @param {string} title - Título (opcional)
    */
-  const warning = (message, title = 'Warning') => {
+  const warning = (message, title = t('common.warning')) => {
     addNotification({
       title,
       body: message,
@@ -268,7 +269,7 @@ export const useNotificationStore = defineStore('notification', () => {
    * @param {string} message - Mensaje
    * @param {string} title - Título (opcional)
    */
-  const info = (message, title = 'Info') => {
+  const info = (message, title = t('common.info')) => {
     addNotification({
       title,
       body: message,
@@ -316,7 +317,7 @@ export const useNotificationStore = defineStore('notification', () => {
     const sender = message.sender;
     
     addNotification({
-      title: sender?.username || 'Nuevo mensaje',
+      title: sender?.username || t('chat.newMessage'),
       body: message.content || '[Audio]' || '[Mensaje]',
       type: 'info',
       icon: sender?.avatar_url || 'mdi-message',
