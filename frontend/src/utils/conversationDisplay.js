@@ -3,6 +3,8 @@
  * @description Nombre, avatar y estado en línea del otro participante (o del grupo)
  */
 
+import { t } from '@/i18n';
+
 /**
  * Participante distinto del usuario actual (conversaciones privadas)
  * @param {Object} conversation
@@ -42,8 +44,8 @@ export const getInitials = (name) =>
  * @returns {string}
  */
 export const getConversationTitle = (conversation, currentUserId) => {
-  if (conversation?.type === 'group') return conversation.name || 'Grupo';
-  return getUserDisplayName(getOtherUser(conversation, currentUserId)) || conversation?.name || 'Chat';
+  if (conversation?.type === 'group') return conversation.name || t('chat.group');
+  return getUserDisplayName(getOtherUser(conversation, currentUserId)) || conversation?.name || t('pages.chat');
 };
 
 /**
@@ -68,4 +70,28 @@ export const formatRelativeTime = (date, locale, now = Date.now()) => {
   if (abs < 86400) return rtf.format(Math.round(seconds / 3600), 'hour');
   if (abs < 7 * 86400) return rtf.format(Math.round(seconds / 86400), 'day');
   return new Date(time).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+};
+
+// Mensajes que no son texto: ícono y nombre (en el idioma de la interfaz)
+const MEDIA_PREVIEW = {
+  audio: ['🎤', 'chat.voiceMessage'],
+  image: ['📷', 'chat.photo'],
+  video: ['🎥', 'chat.video'],
+  file: ['📎', 'chat.document'],
+};
+
+/**
+ * Texto corto de un mensaje para listas, citas y la barra de "Respondiendo a":
+ * "hola", "🎤 Mensaje de voz", "📷 Foto", "📷 mirá esto" (foto con texto), "📎 informe.pdf"
+ * @param {Object} message
+ * @returns {string}
+ */
+export const getMessagePreview = (message) => {
+  if (!message) return '';
+  if (message.is_deleted) return t('chat.messageDeleted');
+  const media = MEDIA_PREVIEW[message.message_type];
+  if (!media) return message.content || '';
+  const [icon, label] = media;
+  const fileName = message.message_type === 'file' ? message.attachments?.[0]?.file_name : null;
+  return `${icon} ${message.content || fileName || t(label)}`;
 };

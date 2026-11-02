@@ -9,6 +9,13 @@ const fs = require('fs').promises;
 const crypto = require('crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
+const { ATTACHMENT_TYPES, getAttachmentType } = require('../utils/attachmentTypes');
+
+// Extensiones que se pueden servir desde /uploads sin riesgo (adjuntos, avatares y notas de voz)
+const SAFE_EXTENSIONS = new Set([
+  ...Object.values(ATTACHMENT_TYPES).map(type => type.ext),
+  'jpeg', 'aac',
+]);
 
 class StorageService {
   constructor() {
@@ -39,9 +46,14 @@ class StorageService {
    * @param {string} originalName - Nombre original del archivo
    * @returns {string}
    */
-  generateFileName(originalName) {
-    const ext = path.extname(originalName);
-    const baseName = path.basename(originalName, ext);
+  generateFileName(originalName, mimeType) {
+    const originalExt = path.extname(originalName);
+    const baseName = path.basename(originalName, originalExt);
+    // Lo subido se sirve desde este mismo dominio: una extensión .html/.svg/.js se ejecutaría
+    // en el sitio. Solo se conservan extensiones conocidas; si no, sale del tipo MIME validado.
+    const ext = SAFE_EXTENSIONS.has(originalExt.toLowerCase().slice(1))
+      ? originalExt.toLowerCase()
+      : `.${getAttachmentType(mimeType)?.ext || 'bin'}`;
     const timestamp = Date.now();
     const random = crypto.randomBytes(4).toString('hex');
     
@@ -63,7 +75,7 @@ class StorageService {
    * @returns {Promise<{url: string, fileName: string, size: number}>}
    */
   async saveFile(buffer, originalName, mimeType, subDir = '') {
-    const fileName = this.generateFileName(originalName);
+    const fileName = this.generateFileName(originalName, mimeType);
     const fileSize = buffer.length;
 
     if (this.storageType === 'local') {

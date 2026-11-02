@@ -4,7 +4,7 @@
  * @author Arquitecto de Software Senior
  */
 
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 
 /**
  * @typedef {Object} MessageAttributes
@@ -352,8 +352,8 @@ module.exports = (sequelize, DataTypes) => {
     const { limit = 50, offset = 0, beforeId = null, afterId = null } = options;
 
     const where = { conversation_id: conversationId };
-    if (beforeId) where.id = { [sequelize.Op.lt]: beforeId };
-    if (afterId) where.id = { [sequelize.Op.gt]: afterId };
+    if (beforeId) where.id = { [Op.lt]: beforeId };
+    if (afterId) where.id = { [Op.gt]: afterId };
 
     const include = [
       {
@@ -517,7 +517,7 @@ module.exports = (sequelize, DataTypes) => {
     return this.findAll({
       where: {
         conversation_id: conversationId,
-        id: { [sequelize.Op.gt]: uc.last_read_message_id },
+        id: { [Op.gt]: uc.last_read_message_id },
         is_deleted: false,
       },
       order: [['id', 'ASC']],

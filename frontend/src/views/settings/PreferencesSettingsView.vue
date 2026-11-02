@@ -36,26 +36,6 @@
       </v-card-text>
     </v-card>
 
-    <!-- Configuración de idioma -->
-    <v-card class="mb-6">
-      <v-card-title>
-        {{ $t('settings.language') }}
-      </v-card-title>
-      <v-card-text>
-        <v-select
-          v-model="form.language"
-          :label="$t('settings.appLanguage')"
-          :placeholder="$t('settings.appLanguage')"
-          :items="languageOptions"
-          item-title="name"
-          item-value="code"
-          density="comfortable"
-          variant="outlined"
-          @update:modelValue="changeLanguage"
-        />
-      </v-card-text>
-    </v-card>
-
     <!-- Configuración de notificaciones -->
     <v-card class="mb-6">
       <v-card-title>
@@ -182,16 +162,17 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
-import api from '@/services/api';
 
 // ============================================
 // STORES
 // ============================================
 
 const themeStore = useThemeStore();
+const { t } = useI18n();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 
@@ -203,11 +184,9 @@ const loading = ref(false);
 const showSnackbar = ref(false);
 const snackbarText = ref('');
 const snackbarColor = ref('info');
-const languageOptions = ref([]);
 
 const form = ref({
   theme: '',
-  language: '',
   notifications_enabled: true,
   notification_sound: true,
   notification_vibration: true,
@@ -226,15 +205,15 @@ const originalForm = ref({});
 // ============================================
 
 const themeOptions = computed(() => [
-  { text: 'Sistema', value: 'system' },
-  { text: 'Claro', value: 'light' },
-  { text: 'Oscuro', value: 'dark' },
+  { text: t('settings.system'), value: 'system' },
+  { text: t('settings.light'), value: 'light' },
+  { text: t('settings.dark'), value: 'dark' },
 ]);
 
 const audioQualityOptions = computed(() => [
-  { text: 'Baja', value: 'low' },
-  { text: 'Media', value: 'medium' },
-  { text: 'Alta', value: 'high' },
+  { text: t('settings.low'), value: 'low' },
+  { text: t('settings.medium'), value: 'medium' },
+  { text: t('settings.high'), value: 'high' },
 ]);
 
 // ============================================
@@ -250,7 +229,6 @@ const fetchSettings = async () => {
   const settings = userStore.settings || {};
   form.value = {
     theme: themeStore.currentTheme || 'system',
-    language: themeStore.language || 'es',
     notifications_enabled: settings.notifications_enabled !== false,
     notification_sound: settings.notification_sound !== false,
     notification_vibration: settings.notification_vibration !== false,
@@ -264,44 +242,23 @@ const fetchSettings = async () => {
   originalForm.value = { ...form.value };
 };
 
-const fetchLanguages = async () => {
-  try {
-    const response = await api.get('/api/languages');
-    languageOptions.value = response.data.languages || [];
-  } catch (error) {
-    console.error('Error al cargar idiomas:', error);
-    // Usar valores por defecto
-    languageOptions.value = [
-      { id: 1, name: 'Español', code: 'es' },
-      { id: 2, name: 'English', code: 'en' },
-      { id: 3, name: 'Français', code: 'fr' },
-      { id: 4, name: 'Deutsch', code: 'de' },
-    ];
-  }
-};
-
 const changeTheme = (theme) => {
   themeStore.setTheme(theme);
   form.value.theme = theme;
-};
-
-const changeLanguage = (language) => {
-  themeStore.setLanguage(language);
-  form.value.language = language;
 };
 
 const handleSave = async () => {
   try {
     loading.value = true;
     
-    const { language, ...settings } = form.value;
+    const settings = { ...form.value };
     await userStore.updateSettings(settings, authStore.user?.id);
     
-    showSnackbarMessage('Preferencias guardadas correctamente', 'success');
+    showSnackbarMessage(t('settings.saved'), 'success');
     originalForm.value = { ...form.value };
   } catch (error) {
     console.error('Error al guardar preferencias:', error);
-    showSnackbarMessage('Error al guardar preferencias', 'error');
+    showSnackbarMessage(t('settings.saveError'), 'error');
   } finally {
     loading.value = false;
   }
@@ -319,7 +276,6 @@ const showSnackbarMessage = (text, color = 'info') => {
 
 onMounted(() => {
   fetchSettings();
-  fetchLanguages();
 });
 </script>
 

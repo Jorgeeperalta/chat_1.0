@@ -10,6 +10,7 @@ import { io } from 'socket.io-client';
 import { useAuthStore } from './authStore';
 import { useChatStore } from './chatStore';
 import { useConversationStore } from './conversationStore';
+import { t } from '@/i18n';
 
 /**
  * @typedef {Object} SocketState
@@ -100,7 +101,7 @@ export const useSocketStore = defineStore('socket', () => {
 
     const activeSocket = socket.value || connect();
     if (!activeSocket) {
-      throw new Error('Inicia sesión para conectarte al chat');
+      throw new Error(t('errors.notLoggedIn'));
     }
     if (isConnected.value) return;
 
@@ -124,7 +125,7 @@ export const useSocketStore = defineStore('socket', () => {
       activeSocket.once('connect_error', handleError);
       timeout = setTimeout(() => {
         cleanup();
-        reject(new Error('No se pudo conectar al servidor de chat'));
+        reject(new Error(t('errors.cannotConnect')));
       }, timeoutMs);
 
       if (isConnected.value) handleConnect();
@@ -186,6 +187,12 @@ export const useSocketStore = defineStore('socket', () => {
       conversationStore.handleNewMessage(data.conversationId, data.message);
     });
     
+    // Evento: nueva foto, video o documento
+    socket.value.on('new_attachment_message', (data) => {
+      chatStore.addTextMessage(data);
+      conversationStore.handleNewMessage(data.conversationId, data.message);
+    });
+
     // Evento: un mensaje fue editado
     socket.value.on('message_updated', (data) => {
       chatStore.applyMessageUpdate(data.message);
@@ -229,6 +236,11 @@ export const useSocketStore = defineStore('socket', () => {
     });
     
     // Evento: mensaje leído
+    // Evento: a alguien le llegaron o vio mensajes (✓✓ / ✓✓ azul)
+    socket.value.on('receipts_updated', (data) => {
+      chatStore.applyReceipt(data);
+    });
+
     socket.value.on('message_read_receipt', (data) => {
       chatStore.handleMessageRead(data);
     });
@@ -316,7 +328,7 @@ export const useSocketStore = defineStore('socket', () => {
       timeout = setTimeout(() => {
         cleanup();
         activeConversationId.value = null;
-        reject(new Error('El servidor no confirmó la unión a la conversación'));
+        reject(new Error(t('errors.joinNotConfirmed')));
       }, 10000);
       activeSocket.emit('join', { conversationId: normalizedId }, (response) => {
         cleanup();
@@ -352,7 +364,7 @@ export const useSocketStore = defineStore('socket', () => {
     await ensureConnected();
     return new Promise((resolve, reject) => {
       socket.value.timeout(15000).emit('text_message', messageData, (timeoutError, response) => {
-        if (timeoutError) return reject(new Error('El servidor no confirmó el envío del mensaje'));
+        if (timeoutError) return reject(new Error(t('errors.sendNotConfirmed')));
         if (response?.error) return reject(new Error(response.error));
         resolve(response);
       });
@@ -369,7 +381,7 @@ export const useSocketStore = defineStore('socket', () => {
     return new Promise((resolve, reject) => {
       // Más margen que el texto: el audio viaja en base64 y puede pesar varios MB
       socket.value.timeout(60000).emit('audio_message', messageData, (timeoutError, response) => {
-        if (timeoutError) return reject(new Error('El servidor no confirmó el envío del audio'));
+        if (timeoutError) return reject(new Error(t('errors.audioNotConfirmed')));
         if (response?.error) return reject(new Error(response.error));
         resolve(response);
       });

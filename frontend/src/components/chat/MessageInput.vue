@@ -19,29 +19,38 @@
     <div class="input-shell">
       <!-- Acciones de la izquierda -->
       <div class="input-actions">
-        <!-- Botón para adjuntar archivos -->
-        <v-btn
-          variant="text"
-          icon
-          size="small"
-          class="action-btn"
-          :disabled="disabled || isRecording"
-          :aria-label="$t('chat.attachFile')"
-          @click="triggerFileInput"
-        >
-          <v-icon icon="mdi-paperclip" />
-          <v-tooltip activator="parent" location="top">
-            {{ $t('chat.attachFile') }}
-          </v-tooltip>
-        </v-btn>
+        <!-- Adjuntar: galería, cámara o documento -->
+        <v-menu location="top start" :disabled="disabled || isRecording">
+          <template #activator="{ props: menuProps }">
+            <v-btn
+              v-bind="menuProps"
+              variant="text"
+              icon
+              size="small"
+              class="action-btn"
+              :disabled="disabled || isRecording"
+              :aria-label="$t('chat.attachFile')"
+              :title="$t('chat.attachFile')"
+            >
+              <v-icon icon="mdi-paperclip" />
+            </v-btn>
+          </template>
+          <v-list density="compact" class="attach-menu">
+            <v-list-item prepend-icon="mdi-image-multiple" :title="$t('chat.attach.gallery')" @click="openPicker('gallery')" />
+            <v-list-item prepend-icon="mdi-camera" :title="$t('chat.attach.camera')" @click="openPicker('camera')" />
+            <v-list-item prepend-icon="mdi-file-document-outline" :title="$t('chat.attach.document')" @click="openPicker('document')" />
+          </v-list>
+        </v-menu>
 
-        <!-- Input oculto para archivos -->
+        <!-- Selectores ocultos. "capture" abre directamente la cámara del teléfono -->
+        <input ref="galleryInput" type="file" accept="image/*,video/*" multiple hidden @change="handleFileChange" />
+        <input ref="cameraInput" type="file" accept="image/*" capture="environment" hidden @change="handleFileChange" />
         <input
-          ref="fileInput"
+          ref="documentInput"
           type="file"
-          accept="image/*,video/*,audio/*,application/pdf"
+          :accept="DOCUMENT_TYPES"
           multiple
-          style="display: none;"
+          hidden
           @change="handleFileChange"
         />
 
@@ -238,6 +247,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, inject, nextTick } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useUserStore } from '@/stores/userStore';
 import { useThemeStore } from '@/stores/themeStore';
 
@@ -302,6 +312,7 @@ const emit = defineEmits([
 
 const device = inject('device');
 const snackbar = inject('snackbar');
+const { t } = useI18n();
 
 // ============================================
 // STORE
@@ -323,7 +334,15 @@ const recordingStartTime = ref(0);
 const mediaRecorder = ref(null);
 const audioChunks = ref([]);
 const audioStream = ref(null);
-const fileInput = ref(null);
+const galleryInput = ref(null);
+const cameraInput = ref(null);
+const documentInput = ref(null);
+
+// Los mismos tipos que acepta el servidor (backend/src/utils/attachmentTypes.js)
+const DOCUMENT_TYPES = [
+  'application/pdf', 'text/plain', 'text/csv', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.odt', '.ods', '.zip', 'audio/*',
+].join(',');
 const textarea = ref(null);
 const showEmojiDialog = ref(false);
 const emojiSearch = ref('');
@@ -534,20 +553,19 @@ const handlePaste = (event) => {
   }
 };
 
-const triggerFileInput = () => {
-  if (fileInput.value) {
-    fileInput.value.click();
+const openPicker = (kind) => {
+  const input = { gallery: galleryInput, camera: cameraInput, document: documentInput }[kind]?.value;
+  if (input) {
+    input.click();
   }
 };
 
 const handleFileChange = (event) => {
   const files = Array.from(event.target.files || []);
+  // Limpiar el input: así elegir el mismo archivo otra vez vuelve a disparar "change"
+  event.target.value = '';
   if (files.length > 0) {
     emit('send:file', files);
-    // Limpiar el input
-    if (fileInput.value) {
-      fileInput.value.value = '';
-    }
   }
 };
 
@@ -629,13 +647,13 @@ const startRecording = async () => {
 
   try {
     if (!isVoiceAvailable.value) {
-      snackbar?.error('La grabación de voz no está disponible en este navegador');
+      snackbar?.error(t('chat.voice.unavailable'));
       return;
     }
 
     // getUserMedia solo existe en contextos seguros (https o localhost)
     if (!navigator.mediaDevices?.getUserMedia) {
-      snackbar?.error('Para grabar audio la app debe abrirse con https o desde localhost');
+      snackbar?.error(t('chat.voice.needsHttps'));
       return;
     }
 
@@ -680,7 +698,7 @@ const startRecording = async () => {
       if (discardRecording) {
         // Cancelada por el usuario: no se envía nada
       } else if (audioBlob.size === 0 || elapsedMs < MIN_RECORDING_MS) {
-        snackbar?.show({ text: 'Mantén presionado el micrófono para grabar', color: 'info' });
+        snackbar?.show({ text: t('chat.voice.holdToRecord'), color: 'info' });
       } else {
         emit('send:voice', audioFile, durationSeconds);
       }
@@ -697,7 +715,7 @@ const startRecording = async () => {
     mediaRecorder.value.onerror = (event) => {
       console.error('Error en MediaRecorder:', event);
       emit('record:error', event);
-      snackbar?.error('Error al grabar audio');
+      snackbar?.error(t('chat.voice.recordError'));
       stopRecording();
     };
     
@@ -712,7 +730,7 @@ const startRecording = async () => {
     emit('record:start');
     
     snackbar?.show({
-      text: isMobile.value ? 'Grabando... Suelta para enviar' : 'Grabando... Pulsa enviar para mandar el audio',
+      text: isMobile.value ? t('chat.voice.recordingMobile') : t('chat.voice.recordingDesktop'),
       color: 'info',
     });
 
@@ -725,11 +743,11 @@ const startRecording = async () => {
     audioStream.value?.getTracks().forEach(track => track.stop());
     audioStream.value = null;
     if (error.name === 'NotAllowedError') {
-      snackbar?.error('Permiso de micrófono denegado');
+      snackbar?.error(t('chat.voice.micDenied'));
     } else if (error.name === 'NotFoundError') {
-      snackbar?.error('No se encontró ningún micrófono');
+      snackbar?.error(t('chat.voice.micNotFound'));
     } else {
-      snackbar?.error('Error al iniciar la grabación');
+      snackbar?.error(t('chat.voice.startError'));
     }
     emit('record:error', error);
   } finally {
@@ -774,7 +792,7 @@ const startRecordingTimer = () => {
 
     // Límite de duración: se detiene y envía automáticamente
     if (seconds >= MAX_RECORDING_SECONDS) {
-      snackbar?.show({ text: 'Se alcanzó la duración máxima del audio', color: 'info' });
+      snackbar?.show({ text: t('chat.voice.maxDuration'), color: 'info' });
       stopRecording();
     }
   }, 250);

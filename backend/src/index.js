@@ -221,8 +221,12 @@ io.on('connection', (socket) => {
 
   // Evento: la app pasó a segundo plano o volvió a primer plano.
   // Con la app oculta los mensajes nuevos se avisan con notificaciones push.
-  socket.on('visibility', (data) => {
+  socket.on('visibility', async (data) => {
     socket.data.visible = data?.visible !== false;
+    // Volvió a la app con un chat abierto: vio lo que llegó mientras tanto
+    if (socket.data.visible) {
+      await socketMiddleware.handleVisible(socket, io);
+    }
   });
 
   // Evento: usuario está escribiendo
@@ -241,7 +245,7 @@ io.on('connection', (socket) => {
 
   // Evento: mensaje entregado
   socket.on('message_delivered', async (data) => {
-    await socketMiddleware.handleMessageDelivered(socket, data);
+    await socketMiddleware.handleMessageDelivered(socket, data, io);
   });
 
   // Evento: usuario desconnectado

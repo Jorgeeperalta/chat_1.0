@@ -4,7 +4,7 @@
  * @author Arquitecto de Software Senior
  */
 
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const crypto = require('crypto');
 
 /**
@@ -180,7 +180,7 @@ module.exports = (sequelize, DataTypes) => {
    */
   TranslationCache.cleanupExpired = async function () {
     const now = new Date();
-    return this.destroy({ where: { expires_at: { [sequelize.Op.lt]: now } } });
+    return this.destroy({ where: { expires_at: { [Op.lt]: now } } });
   };
 
   /**
@@ -191,8 +191,8 @@ module.exports = (sequelize, DataTypes) => {
     const now = new Date();
     
     const total = await this.count();
-    const active = await this.count({ where: { expires_at: { [sequelize.Op.gt]: now } } });
-    const expired = await this.count({ where: { expires_at: { [sequelize.Op.lte]: now } } });
+    const active = await this.count({ where: { expires_at: { [Op.gt]: now } } });
+    const expired = await this.count({ where: { expires_at: { [Op.lte]: now } } });
 
     return { total, active, expired };
   };

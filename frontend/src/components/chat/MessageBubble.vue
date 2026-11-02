@@ -118,8 +118,65 @@
           <span class="message-quote__text">{{ quoteText }}</span>
         </button>
 
-        <!-- Mensaje de texto -->
-        <template v-if="message.type === 'text' || message.type === 'transcription'">
+        <!-- Foto, video o documento -->
+        <div v-if="attachments.length" class="message-attachments">
+          <template v-for="(attachment, index) in attachments" :key="index">
+            <!-- Foto: al tocarla se abre en grande -->
+            <button
+              v-if="attachment.file_type === 'image'"
+              type="button"
+              class="attachment-image"
+              :aria-label="$t('chat.attach.open')"
+              @click.stop="viewerUrl = attachment.file_url"
+            >
+              <img :src="attachment.file_url" :alt="attachment.file_name" loading="lazy" />
+            </button>
+
+            <video
+              v-else-if="attachment.file_type === 'video'"
+              class="attachment-video"
+              :src="attachment.file_url"
+              controls
+              playsinline
+              preload="metadata"
+              @click.stop
+            />
+
+            <!-- Documento: ícono, nombre, tamaño y descarga -->
+            <a
+              v-else
+              class="attachment-file"
+              :href="attachment.file_url || undefined"
+              :download="attachment.file_name"
+              target="_blank"
+              rel="noopener"
+              @click.stop
+            >
+              <v-icon :icon="fileIcon(attachment)" size="28" />
+              <span class="attachment-file__info">
+                <span class="attachment-file__name">{{ attachment.file_name || $t('chat.file', { n: index + 1 }) }}</span>
+                <span class="attachment-file__size">{{ formatFileSize(attachment.file_size) }}</span>
+              </span>
+              <v-icon v-if="attachment.file_url" icon="mdi-download" size="20" class="attachment-file__download" />
+            </a>
+          </template>
+
+          <!-- Subiendo: progreso sobre el adjunto -->
+          <div v-if="message.status === 'sending'" class="attachment-progress">
+            <v-progress-circular
+              :model-value="message.uploadProgress || 0"
+              :indeterminate="!message.uploadProgress"
+              size="40"
+              width="4"
+              color="white"
+            >
+              <span v-if="message.uploadProgress" class="text-caption">{{ message.uploadProgress }}%</span>
+            </v-progress-circular>
+          </div>
+        </div>
+
+        <!-- Mensaje de texto (también el texto que acompaña a una foto o archivo) -->
+        <template v-if="message.type === 'text' || message.type === 'transcription' || (attachments.length && message.content)">
           <div
             class="message-text"
               :class="{ 'message-text-original': showOriginal && availableTranslation }"
@@ -170,7 +227,7 @@
             />
             <div v-else class="voice-unavailable text-caption">
               <v-icon icon="mdi-microphone-off" size="small" start />
-              Audio no disponible
+              {{ $t('chat.voice.loadError') }}
             </div>
             
             <!-- Transcripción (si existe) -->
@@ -213,63 +270,35 @@
           </div>
         </template>
 
-        <!-- Contenido multimedia -->
-        <template v-if="message.attachments && message.attachments.length > 0">
-          <div class="message-attachments mt-2">
-            <v-chip
-              v-for="(attachment, index) in message.attachments"
-              :key="index"
-              color="primary"
-              variant="outlined"
-              size="small"
-              class="mr-2 mb-2"
-            >
-              <v-icon start icon="mdi-file" />
-              {{ attachment.name || `Archivo ${index + 1}` }}
-            </v-chip>
-          </div>
-        </template>
-
-        <span v-if="message.is_edited" class="message-edited">{{ $t('chat.edited') }}</span>
+        <!-- "editado" y, en los mensajes propios, el estado: enviando / ✓ / ✓✓ / ✓✓ azul -->
+        <span v-if="message.is_edited || statusInfo" class="message-meta">
+          <span v-if="message.is_edited" class="message-edited">{{ $t('chat.edited') }}</span>
+          <v-icon
+            v-if="statusInfo"
+            class="message-status"
+            :class="`message-status--${status}`"
+            :icon="statusInfo.icon"
+            size="15"
+            role="img"
+            :title="statusInfo.label"
+            :aria-label="statusInfo.label"
+          />
+        </span>
         </template>
       </div>
 
-      <!-- Footer del mensaje -->
-      <div
-        v-if="!compact"
-        class="message-footer"
-      >
-        <!-- Estado del mensaje (solo para mensajes enviados) -->
-        <div v-if="isCurrentUser" class="message-status">
-          <v-icon
-            v-if="message.status === 'sent'"
-            icon="mdi-check"
-            size="small"
-            color="grey"
-          />
-          <v-icon
-            v-else-if="message.status === 'delivered'"
-            icon="mdi-check-all"
-            size="small"
-            color="grey"
-          />
-          <v-icon
-            v-else-if="message.status === 'read'"
-            icon="mdi-check-all"
-            size="small"
-            color="primary"
-          />
-          <v-icon
-            v-else-if="message.status === 'failed'"
-            icon="mdi-alert-circle"
-            size="small"
-            color="error"
-            @click="retrySend"
-          />
-        </div>
-
-      </div>
     </div>
+
+    <!-- Foto en grande -->
+    <v-dialog :model-value="!!viewerUrl" fullscreen @update:model-value="viewerUrl = ''">
+      <div class="image-viewer" @click="viewerUrl = ''">
+        <img :src="viewerUrl" alt="" @click.stop />
+        <div class="image-viewer__actions">
+          <v-btn icon="mdi-download" variant="text" color="white" :href="viewerUrl" download :aria-label="$t('chat.attach.download')" @click.stop />
+          <v-btn icon="mdi-close" variant="text" color="white" :aria-label="$t('common.close')" @click.stop="viewerUrl = ''" />
+        </div>
+      </div>
+    </v-dialog>
   </div>
 </template>
 
@@ -281,6 +310,7 @@ import { useUserStore } from '@/stores/userStore';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useChatStore } from '@/stores/chatStore';
 import VoiceMessagePlayer from './VoiceMessagePlayer.vue';
+import { getMessagePreview } from '@/utils/conversationDisplay';
 
 // ============================================
 // PROPS
@@ -323,6 +353,11 @@ const props = defineProps({
   canDelete: {
     type: Boolean,
     default: false,
+  },
+  // Estado de un mensaje propio, calculado por la vista: sending | sent | delivered | read | failed
+  status: {
+    type: String,
+    default: '',
   },
   // Resaltado breve al saltar a un mensaje citado
   highlighted: {
@@ -399,6 +434,29 @@ const sender = computed(() => {
 
 const isDeleted = computed(() => Boolean(props.message.is_deleted));
 
+// ---- Fotos, videos y documentos ----
+
+const attachments = computed(() => (isDeleted.value ? [] : props.message.attachments || []));
+const viewerUrl = ref('');
+
+const fileIcon = (attachment) => {
+  const type = attachment.mime_type || '';
+  if (type === 'application/pdf') return 'mdi-file-pdf-box';
+  if (type.startsWith('audio/')) return 'mdi-file-music-outline';
+  if (/word|opendocument.text/.test(type)) return 'mdi-file-word-outline';
+  if (/excel|spreadsheet|csv/.test(type)) return 'mdi-file-excel-outline';
+  if (/powerpoint|presentation/.test(type)) return 'mdi-file-powerpoint-outline';
+  if (/zip/.test(type)) return 'mdi-folder-zip-outline';
+  return 'mdi-file-outline';
+};
+
+const formatFileSize = (bytes) => {
+  const size = Number(bytes) || 0;
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 // Mensajes reales (ya confirmados por el servidor) que no son del sistema
 const hasActions = computed(() =>
   !isSystemMessage.value && !isDeleted.value && props.message.id != null
@@ -420,14 +478,12 @@ const quoteAuthor = computed(() => {
 const quoteText = computed(() => {
   const quoted = props.message.replyTo;
   if (!quoted) return '';
-  if (quoted.is_deleted) return t('chat.messageDeleted');
-  if (quoted.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
-  return quoted.content || '';
+  return getMessagePreview(quoted);
 });
 
 const senderName = computed(() => {
-  if (!sender.value) return 'Desconocido';
-  return `${sender.value.first_name || ''} ${sender.value.last_name || ''}`.trim() || sender.value.username || 'Desconocido';
+  if (!sender.value) return t('chat.user');
+  return `${sender.value.first_name || ''} ${sender.value.last_name || ''}`.trim() || sender.value.username || t('chat.user');
 });
 
 const senderInitials = computed(() => {
@@ -445,6 +501,19 @@ const senderAvatar = computed(() => {
 const avatarColor = computed(() => {
   if (isCurrentUser.value) return 'primary';
   return 'secondary';
+});
+
+const STATUS_ICONS = {
+  sending: 'mdi-clock-outline',
+  sent: 'mdi-check',
+  delivered: 'mdi-check-all',
+  read: 'mdi-check-all',
+  failed: 'mdi-alert-circle-outline',
+};
+
+const statusInfo = computed(() => {
+  if (!isCurrentUser.value || !STATUS_ICONS[props.status]) return null;
+  return { icon: STATUS_ICONS[props.status], label: t(`chat.status.${props.status}`) };
 });
 
 const formattedTime = computed(() => {
@@ -574,7 +643,7 @@ const toggleTranslation = async () => {
     showTranslationLocal.value = true;
   } catch (error) {
     console.error('Error al traducir:', error);
-    snackbar?.error('Error al traducir el mensaje');
+    snackbar?.error(t('chat.translateError'));
   }
 };
 
@@ -597,16 +666,16 @@ const copyMessage = async () => {
     const text = copyText.value;
 
     if (!text) {
-      snackbar?.error('No hay texto para copiar');
+      snackbar?.error(t('chat.nothingToCopy'));
       return;
     }
     
     await navigator.clipboard.writeText(text);
     emit('copy', props.message);
-    snackbar?.show({ text: 'Mensaje copiado al portapapeles', color: 'success' });
+    snackbar?.show({ text: t('chat.copied'), color: 'success' });
   } catch (error) {
     console.error('Error al copiar:', error);
-    snackbar?.error('Error al copiar el mensaje');
+    snackbar?.error(t('chat.copyError'));
   }
 };
 
@@ -620,16 +689,6 @@ const editMessage = () => {
 
 const deleteMessage = () => {
   emit('delete', props.message);
-};
-
-const retrySend = async () => {
-  // Reintentar enviar el mensaje
-  try {
-    await chatStore.retryMessage(props.message);
-  } catch (error) {
-    console.error('Error al reintentar el envío:', error);
-    snackbar?.error(error.message || 'No se pudo reenviar el mensaje');
-  }
 };
 
 // ============================================
@@ -646,7 +705,7 @@ const formatDate = (dateString) => {
   if (diffInHours < 24) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   } else if (diffInHours < 48) {
-    return 'Ayer';
+    return t('chat.yesterday');
   } else if (diffInHours < 168) {
     return date.toLocaleDateString([], { weekday: 'short' });
   } else {
@@ -940,6 +999,139 @@ const formatDate = (dateString) => {
 
   .message-quote__author {
     color: rgb(var(--v-theme-on-primary));
+  }
+}
+
+// ---- Fotos, videos y documentos ----
+.message-attachments {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: -2px -4px 4px;
+}
+
+.attachment-image {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+
+  img {
+    display: block;
+    width: 100%;
+    max-width: 280px;
+    max-height: 320px;
+    min-height: 80px;
+    object-fit: cover;
+    border-radius: 10px;
+  }
+}
+
+.attachment-video {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  max-height: 360px;
+  border-radius: 10px;
+  background: #000;
+}
+
+.attachment-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.14);
+  color: inherit;
+  text-decoration: none;
+
+  .attachment-file__info {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .attachment-file__name {
+    overflow: hidden;
+    font-size: 0.88rem;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .attachment-file__size {
+    font-size: 0.72rem;
+    opacity: 0.75;
+  }
+}
+
+.attachment-progress {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #fff;
+}
+
+.image-viewer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.92);
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  .image-viewer__actions {
+    position: absolute;
+    top: max(8px, env(safe-area-inset-top));
+    right: 8px;
+    display: flex;
+    gap: 4px;
+  }
+}
+
+.message-meta {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  line-height: 1;
+
+  .message-edited {
+    display: inline;
+    margin-top: 0;
+  }
+}
+
+.message-status {
+  opacity: 0.75;
+
+  // Visto: celeste, legible tanto sobre la burbuja azul como en modo oscuro
+  &.message-status--read {
+    color: #7fdcff !important;
+    opacity: 1;
+  }
+
+  &.message-status--failed {
+    color: rgb(var(--v-theme-error)) !important;
+    opacity: 1;
   }
 }
 

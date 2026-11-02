@@ -34,8 +34,11 @@ const getPublicKey = () => (enabled ? config.push.publicKey : null);
 const displayName = (user) =>
   `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.username || 'Alguien';
 
+const MEDIA_PREVIEW = { audio: '🎤', image: '📷', video: '🎥', file: '📎' };
+
 const messagePreview = (message) => {
   if (message.message_type === 'audio') return '🎤 Mensaje de voz';
+  if (MEDIA_PREVIEW[message.message_type] && !message.content) return MEDIA_PREVIEW[message.message_type];
   const text = String(message.content || '').replace(/\s+/g, ' ').trim();
   return text.length > MAX_BODY_LENGTH ? `${text.slice(0, MAX_BODY_LENGTH - 1)}…` : text;
 };
@@ -121,6 +124,11 @@ const notifyNewMessage = async ({ io, message }) => {
     await sendToUser(userId, {
       title: isGroup ? conversation.name : senderName,
       body: isGroup ? `${senderName}: ${preview}` : preview,
+      // El teléfono arma el texto en su idioma: "🎤 Mensaje de voz" / "🎤 Voice message"…
+      // Voz, foto, video o archivo: el teléfono lo nombra en su idioma ("🎤 Mensaje de voz", "📷 Photo"…)
+      kind: message.message_type,
+      caption: message.content || null,
+      sender: isGroup ? senderName : null,
       // Una notificación por chat: los mensajes nuevos reemplazan a la anterior (y vuelven a sonar)
       tag: `conversation-${conversationId}`,
       url: `/chat/${conversationId}`,

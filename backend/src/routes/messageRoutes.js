@@ -14,6 +14,8 @@ const translationService = require('../services/translationService');
 const messageTranslationService = require('../services/messageTranslationService');
 const storageService = require('../services/storageService');
 const pushService = require('../services/pushService');
+const receiptService = require('../services/receiptService');
+const { getAttachmentType, sanitizeFileName } = require('../utils/attachmentTypes');
 const multer = require('multer');
 
 const upload = multer({
@@ -62,26 +64,16 @@ router.get(
         }
       );
 
-      // Marcar mensajes como entregados
-      for (const message of messages) {
-        if (message.sender_id !== req.userId && !message.is_delivered) {
-          await models.Message.markAsDelivered(message.id);
-        }
-      }
-
-      // Actualizar el último mensaje leído
-      if (messages.length > 0) {
-        const lastMessage = messages[messages.length - 1];
-        await models.UserConversation.updateLastReadMessage(
-          req.userId,
-          conversationId,
-          lastMessage.id
-        );
+      // Abrir el chat = ver los mensajes. Al pedir mensajes viejos (before_id) no cambia nada.
+      if (messages.length > 0 && !before_id) {
+        await receiptService.markRead(req.app.get('io'), req.userId, conversationId, messages[messages.length - 1].id);
       }
 
       res.json({
         success: true,
         messages,
+        // Hasta dónde le llegó y vio cada integrante: estado de cada mensaje (✓ / ✓✓ / ✓✓ azul)
+        receipts: await receiptService.getReceipts(conversationId),
         total,
         limit: parseInt(limit, 10),
         offset: parseInt(offset, 10),
@@ -256,6 +248,7 @@ router.post(
         }
       }
 
+      receiptService.onNewMessageInBackground({ io: req.app.get('io'), message });
       pushService.notifyNewMessageInBackground({ io: req.app.get('io'), message });
 
       res.status(201).json({
@@ -368,6 +361,7 @@ router.post(
         }
       }
 
+      receiptService.onNewMessageInBackground({ io: req.app.get('io'), message });
       pushService.notifyNewMessageInBackground({ io: req.app.get('io'), message });
 
       res.status(201).json({
@@ -376,6 +370,115 @@ router.post(
       });
     } catch (error) {
       logger.error(`❌ Error al enviar mensaje de audio a conversación ${req.params.conversationId}: ${error.message}`);
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route POST /api/messages/:conversationId/attachment
+ * @description Envía una foto, video o documento (con texto opcional)
+ * @access Privado (miembro de la conversación)
+ */
+router.post(
+  '/:conversationId/attachment',
+  authMiddleware.verifyToken,
+  authMiddleware.verifyConversationMember(),
+  upload.single('file'),
+  [
+    param('conversationId').isInt().withMessage('El ID de la conversación debe ser un número'),
+    body('content').optional({ nullable: true }).isString().isLength({ max: 5000 }),
+    body('reply_to_message_id').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1 }),
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation Error', details: errors.array() });
+      }
+      if (!req.file || req.file.size === 0) {
+        return res.status(400).json({ error: 'Bad Request', message: 'No se recibió ningún archivo' });
+      }
+
+      const type = getAttachmentType(req.file.mimetype);
+      if (!type) {
+        return res.status(415).json({
+          error: 'Unsupported Media Type',
+          message: 'Ese tipo de archivo no se puede enviar',
+        });
+      }
+
+      const { conversationId } = req.params;
+      const caption = (req.body.content || '').trim() || null;
+
+      let replyToMessageId;
+      try {
+        replyToMessageId = await models.Message.resolveReplyTo(req.body.reply_to_message_id, conversationId);
+      } catch (error) {
+        return res.status(400).json({ error: 'Bad Request', message: error.message });
+      }
+
+      // El nombre en disco lo genera el servidor, con la extensión del tipo validado
+      const saved = await storageService.saveFile(req.file.buffer, `adjunto.${type.ext}`, req.file.mimetype, type.subDir);
+      const fileName = sanitizeFileName(req.file.originalname);
+
+      const user = await models.User.findByPk(req.userId, {
+        include: [{ model: models.Language, as: 'nativeLanguage' }],
+      });
+      const sourceLanguage = await models.Language.findByCode(user?.nativeLanguage?.code || 'es');
+
+      const message = await models.Message.create({
+        conversation_id: conversationId,
+        sender_id: req.userId,
+        message_type: type.kind,
+        content: caption,
+        original_language_id: sourceLanguage?.id,
+        reply_to_message_id: replyToMessageId,
+        translation_status: caption ? 'pending' : null,
+      });
+      await models.MessageAttachment.create({
+        message_id: message.id,
+        file_name: fileName,
+        file_url: saved.url,
+        file_type: type.kind,
+        file_size: req.file.size,
+        mime_type: req.file.mimetype.split(';')[0].trim().toLowerCase(),
+      });
+      await models.Message.touchConversation(message);
+
+      const participants = await models.UserConversation.findAll({
+        where: { conversation_id: conversationId, left_at: null },
+        include: [{ model: models.User, as: 'user', attributes: ['id', 'username', 'preferred_language_id', 'native_language_id'] }],
+      });
+      for (const participant of participants) {
+        if (participant.user.id !== req.userId) {
+          await models.UserConversation.incrementUnreadCount(participant.user.id, conversationId);
+        }
+      }
+
+      const fullMessage = await models.Message.findByIdWithDetails(message.id);
+      const io = req.app.get('io');
+      io?.to(String(conversationId)).emit('new_attachment_message', {
+        message: fullMessage,
+        clientMessageId: req.body.client_message_id || null,
+        conversationId: Number(conversationId),
+      });
+
+      // El texto que acompaña al archivo se traduce como cualquier mensaje
+      if (caption) {
+        setImmediate(() => {
+          messageTranslationService.translateForParticipants({
+            message, content: caption, sourceLanguage, participants, senderId: req.userId, io,
+          }).catch(error => logger.warn(`⚠️ Error al traducir el adjunto ${message.id}: ${error.message}`));
+        });
+      }
+      receiptService.onNewMessageInBackground({ io, message });
+      pushService.notifyNewMessageInBackground({ io, message });
+
+      logger.info(`📎 Adjunto (${type.kind}, ${req.file.size} bytes) enviado por ${req.userId} en ${conversationId}`);
+      res.status(201).json({ success: true, message: fullMessage });
+    } catch (error) {
+      logger.error(`❌ Error al enviar adjunto a conversación ${req.params.conversationId}: ${error.message}`);
       next(error);
     }
   }
@@ -623,6 +726,15 @@ router.delete(
       // Eliminar mensaje (soft delete)
       await models.Message.softDelete(messageId);
 
+      // Las fotos y archivos se borran de verdad: su link deja de funcionar
+      const attachments = await models.MessageAttachment.findAll({ where: { message_id: messageId } });
+      for (const attachment of attachments) {
+        await storageService.deleteFile(attachment.file_url).catch(error =>
+          logger.warn(`⚠️ No se pudo borrar el archivo ${attachment.file_url}: ${error.message}`)
+        );
+        await attachment.destroy();
+      }
+
       req.app.get('io')?.to(String(message.conversation_id)).emit('message_deleted', {
         conversationId: message.conversation_id,
         messageId: message.id,
@@ -768,11 +880,7 @@ router.post(
       });
 
       if (lastMessage) {
-        await models.UserConversation.updateLastReadMessage(
-          req.userId,
-          conversationId,
-          lastMessage.id
-        );
+        await receiptService.markRead(req.app.get('io'), req.userId, conversationId, lastMessage.id);
       }
 
       res.json({

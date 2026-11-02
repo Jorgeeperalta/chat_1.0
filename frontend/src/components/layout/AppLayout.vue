@@ -90,17 +90,6 @@
         />
       </v-btn>
 
-      <!-- Botón de configuración -->
-      <v-btn
-        variant="text"
-        icon
-        color="white"
-        :class="{ 'ml-2': !isMobile }"
-        :to="{ name: 'settings' }"
-      >
-        <v-icon icon="mdi-cog" />
-      </v-btn>
-
       <!-- Menú de usuario -->
       <v-menu
         :close-on-content-click="false"
@@ -139,12 +128,6 @@
         </template>
         <v-card min-width="250">
           <v-list density="compact" nav>
-            <v-list-item :to="{ name: 'profile-settings' }">
-              <template v-slot:prepend>
-                <v-icon icon="mdi-account" />
-              </template>
-              <v-list-item-title>{{ $t('settings.profile') }}</v-list-item-title>
-            </v-list-item>
             <v-list-item :to="{ name: 'preferences-settings' }">
               <template v-slot:prepend>
                 <v-icon icon="mdi-cog-outline" />
@@ -318,7 +301,7 @@ import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
-import { getOtherUser, getConversationTitle, getInitials } from '@/utils/conversationDisplay';
+import { getOtherUser, getConversationTitle, getInitials, getMessagePreview } from '@/utils/conversationDisplay';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useUserStore } from '@/stores/userStore';
 import api from '@/services/api';
@@ -380,8 +363,8 @@ const currentUserInitials = computed(() => {
 });
 
 const currentUserFullName = computed(() => {
-  if (!currentUser.value) return 'Usuario';
-  return `${currentUser.value.first_name || ''} ${currentUser.value.last_name || ''}`.trim() || currentUser.value.username || 'Usuario';
+  if (!currentUser.value) return t('chat.user');
+  return `${currentUser.value.first_name || ''} ${currentUser.value.last_name || ''}`.trim() || currentUser.value.username || t('chat.user');
 });
 
 const recentConversations = computed(() => {
@@ -402,11 +385,14 @@ const availableLanguages = computed(() => [
   { value: 'pt', text: 'Português', icon: 'mdi-flag-outline-pt' },
 ]);
 
+// Idioma al que se le traducen los mensajes: el elegido o, si no eligió, su idioma nativo
+// (igual que el servidor). No es el idioma de las etiquetas, que sigue al navegador.
 const currentLanguage = computed(() => {
-  const preferredLanguage = translationStore.languages.find(
-    language => language.id === Number(authStore.user?.preferred_language_id)
-  );
-  return authStore.user?.preferredLanguage?.code || preferredLanguage?.code || locale.value || 'es';
+  const user = authStore.user;
+  const byId = (id) => translationStore.languages.find(language => language.id === Number(id))?.code;
+  return user?.preferredLanguage?.code || byId(user?.preferred_language_id)
+    || user?.nativeLanguage?.code || byId(user?.native_language_id)
+    || locale.value;
 });
 
 const currentLanguageName = computed(() => {
@@ -432,11 +418,11 @@ const changeLanguage = async (lang) => {
     authStore.user = response.data.user;
     userStore.setUser(response.data.user);
     localStorage.setItem('chat_app_user', JSON.stringify(response.data.user));
-    themeStore.setLanguage(lang);
-    snackbar?.show({ text: 'Idioma cambiado correctamente', color: 'success' });
+    // Solo cambia el idioma al que se traducen los mensajes: las etiquetas siguen al navegador
+    snackbar?.show({ text: t('settings.translationLanguageChanged', { language: currentLanguageName.value }), color: 'success' });
   } catch (error) {
     console.error('Error al cambiar idioma:', error);
-    snackbar?.error('Error al cambiar idioma');
+    snackbar?.error(t('settings.translationLanguageError'));
   }
 };
 
@@ -459,8 +445,7 @@ const lastMessageText = (conversation) => {
   const message = conversation.lastMessage || conversation.last_message;
   if (!message) return '';
   if (message.is_deleted) return `🚫 ${t('chat.messageDeleted')}`;
-  if (message.message_type === 'audio') return `🎤 ${t('chat.voiceMessage')}`;
-  return message.content || '';
+  return getMessagePreview(message);
 };
 
 const truncateMessage = (message) => {

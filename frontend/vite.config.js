@@ -27,8 +27,8 @@ export default defineConfig({
       includeAssets: ['icons/favicon-64x64.png', 'icons/apple-touch-icon-180x180.png'],
       manifest: {
         id: '/',
-        name: 'Converxa',
-        short_name: 'Converxa',
+        name: 'Converxar',
+        short_name: 'Converxar',
         description: 'Chat en tiempo real con traducción por IA',
         lang: 'es',
         start_url: '/home',

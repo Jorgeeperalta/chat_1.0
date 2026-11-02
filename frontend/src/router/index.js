@@ -8,6 +8,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useSocketStore } from '@/stores/socketStore';
+import { t } from '@/i18n';
 
 // Importar vistas
 const Layout = () => import('@/components/layout/AppLayout.vue');
@@ -24,7 +25,6 @@ const ChatView = () => import('@/views/chat/ChatView.vue');
 const ConversationView = () => import('@/views/chat/ConversationView.vue');
 const NewConversationView = () => import('@/views/chat/NewConversationView.vue');
 const SettingsView = () => import('@/views/settings/SettingsView.vue');
-const ProfileSettingsView = () => import('@/views/settings/ProfileSettingsView.vue');
 const PreferencesSettingsView = () => import('@/views/settings/PreferencesSettingsView.vue');
 
 // Guardias de navegación
@@ -94,14 +94,10 @@ const routes = [
         path: 'settings',
         name: 'settings',
         component: SettingsView,
+        // La única sección es Preferencias (Perfil se quitó): /settings sola quedaba vacía
+        redirect: { name: 'preferences-settings' },
         meta: { requiresAuth: true },
         children: [
-          {
-            path: 'profile',
-            name: 'profile-settings',
-            component: ProfileSettingsView,
-            meta: { requiresAuth: true },
-          },
           {
             path: 'preferences',
             name: 'preferences-settings',
@@ -189,22 +185,21 @@ router.afterEach((to, from) => {
  * @param {Object} route - Ruta actual
  */
 const setPageTitle = (route) => {
-  const appName = import.meta.env.VITE_APP_NAME || 'Converxa';
+  const appName = import.meta.env.VITE_APP_NAME || 'Converxar';
   let title = appName;
   
   if (route.meta.title) {
     title = `${route.meta.title} - ${appName}`;
   } else if (route.name) {
     const titles = {
-      'login': 'Iniciar Sesión',
-      'register': 'Registrarse',
-      'home': 'Inicio',
-      'chat': 'Chat',
-      'conversation': 'Conversación',
-      'new-conversation': 'Nueva Conversación',
-      'settings': 'Configuración',
-      'profile-settings': 'Perfil',
-      'preferences-settings': 'Preferencias',
+      'login': t('pages.login'),
+      'register': t('pages.register'),
+      'home': t('pages.home'),
+      'chat': t('pages.chat'),
+      'conversation': t('pages.conversation'),
+      'new-conversation': t('pages.newConversation'),
+      'settings': t('pages.settings'),
+      'preferences-settings': t('pages.preferences'),
     };
     
     if (titles[route.name]) {

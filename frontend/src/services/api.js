@@ -7,6 +7,7 @@
 import axios from 'axios';
 import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
+import { t } from '@/i18n';
 
 // Crear instancia de Axios
 // Las rutas ya incluyen el prefijo /api: en producción (mismo origen que el backend)
@@ -58,12 +59,12 @@ api.interceptors.response.use(
         } else {
           // Token de refresh también expirado, cerrar sesión
           authStore.logout();
-          notificationStore.error('Sesión expirada. Por favor, inicia sesión nuevamente.');
+          notificationStore.error(t('errors.sessionExpired'));
         }
       } catch (refreshError) {
         console.error('Error al refrescar token:', refreshError);
         authStore.logout();
-        notificationStore.error('Error de autenticación. Por favor, inicia sesión nuevamente.');
+        notificationStore.error(t('errors.authError'));
       }
     }
     
@@ -74,20 +75,20 @@ api.interceptors.response.use(
       
       // Mostrar notificación para errores comunes
       if (status >= 500) {
-        notificationStore.error('Error del servidor. Por favor, inténtalo más tarde.');
+        notificationStore.error(t('errors.serverErrorRetry'));
       } else if (status === 403) {
-        notificationStore.error(data.message || 'No tienes permisos para realizar esta acción.');
+        notificationStore.error(data.message || t('errors.forbidden'));
       } else if (status === 404) {
-        notificationStore.error(data.message || 'Recurso no encontrado.');
+        notificationStore.error(data.message || t('errors.notFound'));
       } else if (status === 429) {
-        notificationStore.warning('Demasiadas solicitudes. Por favor, espera un momento.');
+        notificationStore.warning(t('errors.tooManyRequests'));
       } else if (status === 400 && data.message) {
         notificationStore.error(data.message);
       }
     } else if (error.code === 'ECONNABORTED') {
-      notificationStore.error('La solicitud tardó demasiado. Por favor, inténtalo nuevamente.');
+      notificationStore.error(t('errors.timeout'));
     } else if (!navigator.onLine) {
-      notificationStore.error('No hay conexión a Internet. Por favor, verifica tu conexión.');
+      notificationStore.error(t('errors.offline'));
     }
     
     return Promise.reject(error);

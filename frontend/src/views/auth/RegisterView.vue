@@ -286,16 +286,16 @@ const form = ref({
 
 const nameRules = computed(() => [
   v => !!v || t('errors.required'),
-  v => (v && v.length >= 2) || 'El nombre debe tener al menos 2 caracteres',
-  v => (v && v.length <= 50) || 'El nombre debe tener máximo 50 caracteres',
-  v => /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s-']+$/.test(v) || 'El nombre solo puede contener letras y guiones',
+  v => (v && v.length >= 2) || t('validation.nameMin'),
+  v => (v && v.length <= 50) || t('validation.nameMax'),
+  v => /^[a-zA-ZáéíóúüñÁÉÍÓÚÜÑ\s-']+$/.test(v) || t('validation.nameLetters'),
 ]);
 
 const usernameRules = computed(() => [
   v => !!v || t('errors.required'),
   v => (v && v.length >= 3) || t('errors.invalidUsername'),
   v => (v && v.length <= 50) || t('validation.maxLength', [50]),
-  v => /^[a-zA-Z0-9_-]+$/.test(v) || 'El nombre de usuario solo puede contener letras, números, guiones y guiones bajos',
+  v => /^[a-zA-Z0-9_-]+$/.test(v) || t('validation.usernameChars'),
 ]);
 
 const emailRules = computed(() => [
@@ -306,14 +306,14 @@ const emailRules = computed(() => [
 const passwordRules = computed(() => [
   v => !!v || t('errors.required'),
   v => (v && v.length >= 8) || t('errors.invalidPassword'),
-  v => /[A-Z]/.test(v) || 'Debe contener al menos una letra mayúscula',
-  v => /[a-z]/.test(v) || 'Debe contener al menos una letra minúscula',
-  v => /[0-9]/.test(v) || 'Debe contener al menos un número',
+  v => /[A-Z]/.test(v) || t('validation.passwordUpper'),
+  v => /[a-z]/.test(v) || t('validation.passwordLower'),
+  v => /[0-9]/.test(v) || t('validation.passwordNumber'),
 ]);
 
 const confirmPasswordRules = computed(() => [
   v => !!v || t('errors.required'),
-  v => v === form.value.password || 'Las contraseñas no coinciden',
+  v => v === form.value.password || t('validation.passwordsMismatch'),
 ]);
 
 const languageRules = computed(() => [

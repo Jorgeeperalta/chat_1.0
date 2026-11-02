@@ -12,6 +12,7 @@ const { models } = require('../models');
 const logger = require('../utils/logger');
 const storageService = require('../services/storageService');
 const { userRoom } = require('../utils/socketRooms');
+const receiptService = require('../services/receiptService');
 const multer = require('multer');
 
 const upload = multer({
@@ -485,11 +486,7 @@ router.post(
       });
 
       if (lastMessage) {
-        await models.UserConversation.updateLastReadMessage(
-          req.userId,
-          conversationId,
-          lastMessage.id
-        );
+        await receiptService.markRead(req.app.get('io'), req.userId, conversationId, lastMessage.id);
       }
 
       res.json({
@@ -561,14 +558,21 @@ router.post(
       });
       const membershipByUser = new Map(memberships.map(m => [m.user_id, m]));
 
+      // Los mensajes anteriores a su ingreso no cuentan para los estados (✓✓ / visto):
+      // si no, cada vez que entra alguien todos los mensajes viejos volverían a ✓
+      const receipts = {
+        last_delivered_message_id: conversation.last_message_id,
+        last_read_message_id: conversation.last_message_id,
+      };
+
       const addedUserIds = [];
       for (const userId of user_ids) {
         const membership = membershipByUser.get(userId);
         if (!membership) {
-          await models.UserConversation.create({ user_id: userId, conversation_id: conversationId, role: 'member' });
+          await models.UserConversation.create({ user_id: userId, conversation_id: conversationId, role: 'member', ...receipts });
           addedUserIds.push(userId);
         } else if (membership.left_at) {
-          await membership.update({ left_at: null, role: 'member', joined_at: new Date(), unread_count: 0 });
+          await membership.update({ left_at: null, role: 'member', joined_at: new Date(), unread_count: 0, ...receipts });
           addedUserIds.push(userId);
         }
       }

@@ -8,6 +8,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import api from '@/services/api';
 import { useUserStore } from './userStore';
+import { t } from '@/i18n';
 
 /**
  * @typedef {Object} Language
@@ -196,7 +197,7 @@ export const useTranslationStore = defineStore('translation', () => {
         ? message.transcription || message.audio_transcription
         : message.content;
       if (!text || !message.id || !message.conversation_id) {
-        throw new Error('El mensaje no contiene datos suficientes para traducir');
+        throw new Error(t('errors.cannotTranslate'));
       }
 
       if (!languages.value.length) await fetchLanguages();
