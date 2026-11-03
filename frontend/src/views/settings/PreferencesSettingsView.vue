@@ -95,6 +95,16 @@
           density="comfortable"
           hide-details
         />
+        <!-- Se aplica al instante (no depende del botón Guardar) -->
+        <v-switch
+          :model-value="themeStore.dualView"
+          :label="$t('settings.dualView')"
+          :hint="$t('settings.dualViewHint')"
+          persistent-hint
+          color="primary"
+          density="comfortable"
+          @update:model-value="themeStore.setDualView"
+        />
       </v-card-text>
     </v-card>
 

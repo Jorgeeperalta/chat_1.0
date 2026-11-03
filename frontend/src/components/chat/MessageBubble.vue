@@ -162,9 +162,14 @@
 
         <!-- Mensaje de texto (también el texto que acompaña a una foto o archivo) -->
         <template v-if="message.type === 'text' || message.type === 'transcription' || (attachments.length && message.content)">
+          <!-- Modo dual: el original pequeño arriba y la traducción grande abajo -->
+          <div v-if="showDual" class="message-original">
+            <span class="message-original__label">{{ $t('chat.original') }}</span>
+            <div class="message-original__text" v-html="formatText(message.content)" />
+          </div>
           <div
             class="message-text"
-              :class="{ 'message-text-original': showOriginal && availableTranslation }"
+            :class="{ 'message-text-original': showOriginal && availableTranslation, 'message-text--dual': showDual }"
             v-html="formattedText"
           />
           
@@ -184,17 +189,17 @@
             <p class="text-body-2">{{ availableTranslation }}</p>
           </div>
           
-          <!-- Botón para mostrar/ocultar traducción -->
+          <!-- Sin traducción: "Ver traducción". Ya traducido: ver/ocultar el original de este mensaje -->
           <v-btn
-            v-if="!showTranslation && canTranslate"
+            v-if="!showTranslation && textButton"
             variant="text"
             size="x-small"
             color="primary"
             class="mt-1"
-            @click.stop="toggleTranslation"
+            @click.stop="textButton.action"
           >
             <v-icon size="small" start icon="mdi-translate" />
-            {{ $t('chat.showTranslation') }}
+            {{ textButton.label }}
           </v-btn>
         </template>
 
@@ -226,14 +231,14 @@
               
               <!-- Traducción de la transcripción -->
               <div
-                v-if="showTranslationComputed && availableTranslation && (isCurrentUser || props.showOriginal)"
+                v-if="showTranslationComputed && availableTranslation"
                 class="message-translation mt-1"
               >
                 <p class="text-body-2">{{ availableTranslation }}</p>
               </div>
               
               <v-btn
-                v-if="!showTranslation && canTranslate"
+                v-if="!showTranslation && canTranslate && !availableTranslation"
                 variant="text"
                 size="x-small"
                 color="primary"
@@ -294,6 +299,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useUserStore } from '@/stores/userStore';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useThemeStore } from '@/stores/themeStore';
 import VoiceMessagePlayer from './VoiceMessagePlayer.vue';
 import { getMessagePreview, getAvatarColor } from '@/utils/conversationDisplay';
 
@@ -372,6 +378,7 @@ const authStore = useAuthStore();
 const userStore = useUserStore();
 const translationStore = useTranslationStore();
 const chatStore = useChatStore();
+const themeStore = useThemeStore();
 
 // ============================================
 // INJECT
@@ -387,6 +394,7 @@ const hover = ref(false);
 const menuOpen = ref(false);
 const isPlaying = ref(false);
 const showTranslationLocal = ref(false);
+const showOriginalLocal = ref(false);
 const translatedText = ref('');
 
 // ============================================
@@ -488,11 +496,15 @@ const formattedTime = computed(() => {
   return formatDate(props.message.created_at || props.message.timestamp);
 });
 
-const formattedText = computed(() => {
-  // Formatear enlaces
-  let text = !isCurrentUser.value && availableTranslation.value && !props.showOriginal
+const formattedText = computed(() => formatText(
+  !isCurrentUser.value && availableTranslation.value && !props.showOriginal
     ? availableTranslation.value
-    : props.message.content || '';
+    : props.message.content
+));
+
+// Texto para mostrar con v-html: escapado, con enlaces y saltos de línea
+const formatText = (value) => {
+  let text = value || '';
 
   // Escapar HTML: el texto lo escribe otro usuario y se muestra con v-html
   text = text
@@ -512,11 +524,40 @@ const formattedText = computed(() => {
   text = text.replace(/\n/g, '<br>');
   
   return text;
-});
+};
 
 const availableTranslation = computed(() =>
   props.message.translated_content || translatedText.value
 );
+
+const normalize = (text) => String(text || '').trim().toLowerCase();
+
+// Mensaje recibido que se muestra traducido (y la traducción dice algo distinto al original)
+const isShownTranslated = computed(() =>
+  !isCurrentUser.value
+  && !props.showOriginal
+  && Boolean(availableTranslation.value)
+  && normalize(availableTranslation.value) !== normalize(props.message.content)
+);
+
+// Original + traducción a la vez: en todos los mensajes (Preferencias) o solo en este
+const showDual = computed(() =>
+  isShownTranslated.value && (themeStore.dualView || showOriginalLocal.value)
+);
+
+const textButton = computed(() => {
+  if (!canTranslate.value) return null;
+  if (isShownTranslated.value) {
+    if (themeStore.dualView) return null;
+    return {
+      label: showOriginalLocal.value ? t('chat.hideOriginal') : t('chat.viewOriginal'),
+      action: () => { showOriginalLocal.value = !showOriginalLocal.value; },
+    };
+  }
+  // Traducido pero igual al original (mismo idioma): no hay nada más que mostrar
+  if (availableTranslation.value) return null;
+  return { label: t('chat.showTranslation'), action: toggleTranslation };
+});
 
 const bubbleStyle = computed(() => {
   const style = {};
@@ -811,9 +852,39 @@ const formatDate = (dateString) => {
       text-decoration: underline;
     }
 
+    // Traducción en modo dual: un poco más grande, es lo principal
+    &.message-text--dual {
+      font-size: 1.02rem;
+    }
+
     &.message-text-original {
       opacity: 0.8;
       font-style: italic;
+    }
+  }
+
+  // Modo dual: original arriba, pequeño y atenuado, separado de la traducción
+  .message-original {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed rgba(127, 127, 127, 0.45);
+    font-size: 0.8rem;
+    line-height: 1.35;
+    opacity: 0.75;
+    overflow-wrap: anywhere;
+
+    &__label {
+      display: block;
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      opacity: 0.85;
+    }
+
+    & :deep(a) {
+      color: inherit;
+      text-decoration: underline;
     }
   }
 

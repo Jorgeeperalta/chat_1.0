@@ -7,10 +7,12 @@ import * as components from 'vuetify/components';
 import * as directives from 'vuetify/directives';
 import MessageBubble from '../MessageBubble.vue';
 import { useAuthStore } from '@/stores/authStore';
+import { useThemeStore } from '@/stores/themeStore';
 
 vi.mock('@/services/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 
 globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
+window.matchMedia ??= () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
 // jsdom no tiene visualViewport (lo usa el posicionamiento de v-menu)
 globalThis.visualViewport ??= Object.assign(new EventTarget(), { width: 1024, height: 768, scale: 1, offsetLeft: 0, offsetTop: 0 });
 
@@ -122,5 +124,50 @@ describe('MessageBubble: estado de los mensajes propios', () => {
   it('no muestra estado en los mensajes de otros', () => {
     const wrapper = mountBubble({ id: 21, sender_id: 2, sender: ANA, content: 'hola' }, { status: 'read' });
     expect(wrapper.find('.message-status').exists()).toBe(false);
+  });
+});
+
+describe('MessageBubble: modo dual (original + traducción)', () => {
+  const RECEIVED = { id: 30, sender_id: 2, sender: ANA, content: 'Good morning', translated_content: 'Buenos días' };
+
+  beforeEach(() => {
+    localStorage.clear();
+    setActivePinia(createPinia());
+    useAuthStore().user = ME;
+    document.body.innerHTML = '';
+  });
+
+  it('sin modo dual muestra solo la traducción, con botón para ver el original', async () => {
+    const wrapper = mountBubble(RECEIVED);
+    expect(wrapper.find('.message-text').text()).toBe('Buenos días');
+    expect(wrapper.find('.message-original').exists()).toBe(false);
+
+    const button = wrapper.findAll('button').find(b => b.text().includes('chat.viewOriginal'));
+    await button.trigger('click');
+    expect(wrapper.find('.message-original__text').text()).toBe('Good morning');
+    expect(wrapper.find('.message-text').text()).toBe('Buenos días');
+  });
+
+  it('con modo dual muestra el original arriba y la traducción abajo en todos los mensajes', () => {
+    useThemeStore().setDualView(true);
+    const wrapper = mountBubble(RECEIVED);
+    const html = wrapper.html();
+    expect(html.indexOf('message-original')).toBeLessThan(html.indexOf('message-text message-text--dual'));
+    expect(wrapper.find('.message-original__text').text()).toBe('Good morning');
+    expect(wrapper.find('.message-text').text()).toBe('Buenos días');
+    expect(wrapper.text()).not.toContain('chat.viewOriginal');
+    expect(localStorage.getItem('chat_app_dual_view')).toBe('1');
+  });
+
+  it('no duplica si la traducción es igual al original, ni en mensajes propios', () => {
+    useThemeStore().setDualView(true);
+    expect(mountBubble({ ...RECEIVED, translated_content: 'good morning ' }).find('.message-original').exists()).toBe(false);
+    expect(mountBubble({ ...RECEIVED, sender_id: 1 }).find('.message-original').exists()).toBe(false);
+  });
+
+  it('el original también se escapa', () => {
+    useThemeStore().setDualView(true);
+    const wrapper = mountBubble({ ...RECEIVED, content: '<b>hola</b>' });
+    expect(wrapper.find('.message-original__text b').exists()).toBe(false);
   });
 });

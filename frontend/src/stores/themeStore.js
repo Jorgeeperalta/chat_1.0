@@ -30,6 +30,8 @@ export const useThemeStore = defineStore('theme', () => {
   const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches);
   // Fondo del chat: se elige en Preferencias y se guarda en este dispositivo
   const chatBackground = ref(readStorage('chat_app_background') || DEFAULT_BACKGROUND);
+  // Modo dual: original pequeño arriba y traducción abajo (para quien aprende el idioma)
+  const dualView = ref(readStorage('chat_app_dual_view') === '1');
   let initialized = false;
 
   // ============================================
@@ -60,6 +62,15 @@ export const useThemeStore = defineStore('theme', () => {
   const setChatBackground = (id) => {
     chatBackground.value = id;
     try { localStorage.setItem('chat_app_background', id); } catch { /* sin almacenamiento: solo por esta vez */ }
+  };
+
+  /**
+   * Activa o desactiva el modo dual (se guarda en este dispositivo)
+   * @param {boolean} enabled
+   */
+  const setDualView = (enabled) => {
+    dualView.value = Boolean(enabled);
+    try { localStorage.setItem('chat_app_dual_view', enabled ? '1' : '0'); } catch { /* sin almacenamiento: solo por esta vez */ }
   };
 
   /**
@@ -145,6 +156,7 @@ export const useThemeStore = defineStore('theme', () => {
     language,
 
     chatBackground,
+    dualView,
 
     // Getters
     isDark,
@@ -154,6 +166,7 @@ export const useThemeStore = defineStore('theme', () => {
     // Acciones
     initialize,
     setChatBackground,
+    setDualView,
     setTheme,
     toggleTheme,
     getTheme,
