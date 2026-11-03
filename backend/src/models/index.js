@@ -206,6 +206,30 @@ const ensureSchema = async () => {
 
   // Notificaciones push: sync() solo crea la tabla si no existe (no modifica una existente)
   await models.PushSubscription.sync();
+
+  await syncUserLanguages();
+};
+
+/**
+ * Un solo idioma por usuario: iguala native_language_id y preferred_language_id donde difieran.
+ * Gana el preferido (el último que eligió en el selector de la app). Si no hay preferido,
+ * se copia el nativo. Es idempotente: una vez igualados, no cambia nada.
+ * @returns {Promise<number>} Usuarios corregidos
+ */
+const syncUserLanguages = async () => {
+  const fromPreferred = `preferred_language_id IS NOT NULL
+        AND (native_language_id IS NULL OR native_language_id <> preferred_language_id)`;
+  const fromNative = 'preferred_language_id IS NULL AND native_language_id IS NOT NULL';
+
+  const [[{ pending }]] = await sequelize.query(
+    `SELECT COUNT(*) AS pending FROM users WHERE (${fromPreferred}) OR (${fromNative})`
+  );
+  if (!Number(pending)) return 0;
+
+  await sequelize.query(`UPDATE users SET native_language_id = preferred_language_id WHERE ${fromPreferred}`);
+  await sequelize.query(`UPDATE users SET preferred_language_id = native_language_id WHERE ${fromNative}`);
+  console.log(`✅ Idioma unificado en ${pending} usuario(s)`);
+  return Number(pending);
 };
 
 // Verificar conexión
@@ -235,6 +259,7 @@ module.exports = {
   models,
   sync,
   ensureSchema,
+  syncUserLanguages,
   testConnection,
   closeConnection,
   ...models,

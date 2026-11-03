@@ -71,28 +71,9 @@
         </v-list>
       </v-menu>
 
-      <!-- Botón de notificaciones (en el celular no entra en la barra) -->
-      <v-btn
-        v-if="!isMobile"
-        variant="text"
-        icon
-        color="white"
-        class="ml-2"
-      >
-        <v-icon icon="mdi-bell" />
-        <v-badge
-          v-if="unreadNotifications > 0"
-          :content="unreadNotifications"
-          color="error"
-          floating
-          offset-y="-2"
-          offset-x="4"
-        />
-      </v-btn>
-
       <!-- Menú de usuario -->
       <v-menu
-        :close-on-content-click="false"
+        :close-on-content-click="true"
         location="bottom end"
         transition="scale-transition"
       >
@@ -111,10 +92,11 @@
             />
             <v-avatar
               v-else
-              color="white"
+              :color="getAvatarColor(currentUser?.id)"
               size="32"
+              class="user-avatar"
             >
-              <span class="text-primary text-h6 font-weight-bold">
+              <span class="text-white text-subtitle-1 font-weight-bold">
                 {{ currentUserInitials }}
               </span>
             </v-avatar>
@@ -128,6 +110,12 @@
         </template>
         <v-card min-width="250">
           <v-list density="compact" nav>
+            <v-list-item :to="{ name: 'preferences-settings', hash: '#profile-photo' }">
+              <template v-slot:prepend>
+                <v-icon icon="mdi-account-circle" />
+              </template>
+              <v-list-item-title>{{ $t('profile.photo') }}</v-list-item-title>
+            </v-list-item>
             <v-list-item :to="{ name: 'preferences-settings' }">
               <template v-slot:prepend>
                 <v-icon icon="mdi-cog-outline" />
@@ -165,7 +153,7 @@
           />
           <v-list-item-avatar
             v-else
-            color="primary"
+            :color="getAvatarColor(currentUser?.id)"
             rounded="0"
           >
             <span class="text-white text-h6 font-weight-bold">
@@ -189,14 +177,6 @@
           prepend-icon="mdi-home"
         >
           <v-list-item-title>{{ $t('common.home') }}</v-list-item-title>
-        </v-list-item>
-
-        <v-list-item
-          :to="{ name: 'chat' }"
-          :active="['chat', 'conversation', 'new-conversation'].includes(currentRoute.name)"
-          prepend-icon="mdi-message-text"
-        >
-          <v-list-item-title>{{ $t('chat.chat') }}</v-list-item-title>
         </v-list-item>
 
         <v-list-item
@@ -231,7 +211,7 @@
               :color="getOtherUser(conversation, currentUser?.id)?.status === 'online' ? 'success' : 'grey-lighten-1'"
               class="mr-3"
             >
-              <v-avatar size="36" :color="getConversationAvatar(conversation) ? undefined : 'primary'">
+              <v-avatar size="36" :color="getConversationAvatar(conversation) ? undefined : getConversationColor(conversation, currentUser?.id)">
                 <v-img v-if="getConversationAvatar(conversation)" :src="getConversationAvatar(conversation)" cover />
                 <span v-else class="text-white text-caption font-weight-bold">
                   {{ getInitials(getConversationTitle(conversation, currentUser?.id)) }}
@@ -301,7 +281,14 @@ import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
-import { getOtherUser, getConversationTitle, getInitials, getMessagePreview } from '@/utils/conversationDisplay';
+import {
+  getOtherUser,
+  getConversationTitle,
+  getInitials,
+  getMessagePreview,
+  getAvatarColor,
+  getConversationColor,
+} from '@/utils/conversationDisplay';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useUserStore } from '@/stores/userStore';
 import api from '@/services/api';
@@ -371,10 +358,6 @@ const recentConversations = computed(() => {
   return conversationStore.sortedConversations.slice(0, 5);
 });
 
-const unreadNotifications = computed(() => {
-  return 0; // TODO: Implementar notificaciones
-});
-
 // Idiomas disponibles
 const availableLanguages = computed(() => [
   { value: 'es', text: 'Español', icon: 'mdi-flag-outline-es' },
@@ -413,6 +396,8 @@ const changeLanguage = async (lang) => {
     if (!language) throw new Error(`Idioma no disponible: ${lang}`);
 
     const response = await api.patch('/api/auth/me', {
+      // Un solo idioma por usuario: el servidor guarda el mismo en las dos columnas
+      native_language_id: language.id,
       preferred_language_id: language.id,
     });
     authStore.user = response.data.user;

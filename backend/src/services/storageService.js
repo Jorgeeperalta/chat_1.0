@@ -155,9 +155,15 @@ class StorageService {
    */
   async deleteFileLocal(url) {
     try {
-      // Convertir URL a path local
-      const filePath = path.join(this.localConfig.uploadsDir, url.replace('/uploads/', ''));
-      
+      // Convertir URL a path local. Solo se borra dentro de uploads/: una URL como
+      // "/uploads/../src/index.js" no puede salir de la carpeta.
+      const uploadsDir = path.resolve(this.localConfig.uploadsDir);
+      const filePath = path.resolve(uploadsDir, String(url).replace(/^\/uploads\//, ''));
+      if (!String(url).startsWith('/uploads/') || !filePath.startsWith(uploadsDir + path.sep)) {
+        logger.warn(`⚠️ Se rechazó borrar un archivo fuera de uploads: ${url}`);
+        return false;
+      }
+
       await fs.access(filePath);
       await fs.unlink(filePath);
       

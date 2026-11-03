@@ -174,6 +174,24 @@ module.exports = (sequelize, DataTypes) => {
 
       hooks: {
         /**
+         * Un solo idioma por usuario: native_language_id y preferred_language_id siempre iguales.
+         * Si difieren, los mensajes se escriben "en" un idioma y se traducen "a" otro, y la
+         * traducción falla o sale cruzada. Cualquier cambio de uno se copia al otro.
+         * @param {User} user - Instancia del usuario
+         */
+        beforeSave: (user) => {
+          if (user.isNewRecord) {
+            const languageId = user.preferred_language_id || user.native_language_id;
+            user.native_language_id = languageId;
+            user.preferred_language_id = languageId;
+          } else if (user.changed('preferred_language_id') && user.preferred_language_id) {
+            user.native_language_id = user.preferred_language_id;
+          } else if (user.changed('native_language_id') && user.native_language_id) {
+            user.preferred_language_id = user.native_language_id;
+          }
+        },
+
+        /**
          * Hash de la contraseña antes de crear/actualizar
          * @param {User} user - Instancia del usuario
          */

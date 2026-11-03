@@ -533,6 +533,15 @@ export const useChatStore = defineStore('chat', () => {
     return 'sent';
   };
 
+  // Un contacto cambió su foto: los mensajes ya cargados la muestran sin recargar
+  const applySenderAvatar = ({ userId, avatar_url: avatarUrl }) => {
+    messages.value.forEach(message => {
+      if (Number(message.sender_id) === Number(userId) && message.sender) {
+        message.sender = { ...message.sender, avatar_url: avatarUrl };
+      }
+    });
+  };
+
   const handleMessageRead = (data) => {
     const message = messagesById.value[data.messageId];
     
@@ -1142,6 +1151,7 @@ export const useChatStore = defineStore('chat', () => {
     handleMessageRead,
     applyReceipt,
     getMessageStatus,
+    applySenderAvatar,
     sendAttachment,
     handleMessageSent,
     sendTextMessage,

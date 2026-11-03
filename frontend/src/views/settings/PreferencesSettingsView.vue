@@ -6,156 +6,105 @@
 
 <template>
   <div class="preferences-settings-view">
-    <!-- Header -->
-    <div class="settings-header mb-6">
-      <h2 class="text-h5 font-weight-bold">
-        {{ $t('settings.preferences') }}
-      </h2>
-      <p class="text-subtitle-1 text-grey">
-        {{ $t('settings.preferencesDescription') }}
-      </p>
+    <div class="settings-header">
+      <h2 class="text-h5 font-weight-bold">{{ $t('settings.preferences') }}</h2>
     </div>
 
-    <!-- Configuración de tema -->
-    <v-card class="mb-6">
-      <v-card-title>
-        {{ $t('settings.theme') }}
-      </v-card-title>
+    <!-- Foto de perfil (se guarda al instante) -->
+    <v-card id="profile-photo">
+      <v-card-title>{{ $t('profile.photo') }}</v-card-title>
+      <v-card-text>
+        <ProfilePhotoEditor />
+      </v-card-text>
+    </v-card>
+
+    <!-- Apariencia: tema y fondo del chat (se aplican al instante, en este dispositivo) -->
+    <v-card>
+      <v-card-title>{{ $t('settings.appearance') }}</v-card-title>
       <v-card-text>
         <v-select
           v-model="form.theme"
           :label="$t('settings.theme')"
-          :placeholder="$t('settings.theme')"
           :items="themeOptions"
           item-title="text"
           item-value="value"
           density="comfortable"
           variant="outlined"
-          @update:modelValue="changeTheme"
+          @update:model-value="changeTheme"
         />
+
+        <div class="text-subtitle-2 mb-1">{{ $t('settings.chatBackground') }}</div>
+        <div class="text-caption text-medium-emphasis mb-3">{{ $t('settings.chatBackgroundHint') }}</div>
+        <div class="background-grid" role="radiogroup" :aria-label="$t('settings.chatBackground')">
+          <button
+            v-for="option in backgroundOptions"
+            :key="option.id"
+            type="button"
+            role="radio"
+            class="background-option"
+            :class="{ 'is-selected': themeStore.chatBackground === option.id }"
+            :aria-checked="themeStore.chatBackground === option.id"
+            :aria-label="$t(`settings.backgrounds.${option.id}`)"
+            @click="themeStore.setChatBackground(option.id)"
+          >
+            <span class="background-option__preview" :style="{ background: option.preview }">
+              <span class="background-option__bubble background-option__bubble--in" />
+              <span class="background-option__bubble background-option__bubble--out" />
+              <v-icon
+                v-if="themeStore.chatBackground === option.id"
+                icon="mdi-check-circle"
+                color="primary"
+                class="background-option__check"
+              />
+            </span>
+            <span class="background-option__name">{{ $t(`settings.backgrounds.${option.id}`) }}</span>
+          </button>
+        </div>
       </v-card-text>
     </v-card>
 
-    <!-- Configuración de notificaciones -->
-    <v-card class="mb-6">
-      <v-card-title>
-        {{ $t('settings.notifications') }}
-      </v-card-title>
+    <!-- Notificaciones (también las push, con la app cerrada) -->
+    <v-card>
+      <v-card-title>{{ $t('settings.notifications') }}</v-card-title>
       <v-card-text>
-        <v-switch
-          v-model="form.notifications_enabled"
-          :label="$t('settings.enableNotifications')"
-          density="comfortable"
-          hide-details
-          class="mb-4"
-        />
-        
         <v-switch
           v-model="form.notification_sound"
           :label="$t('settings.notificationSound')"
+          color="primary"
           density="comfortable"
           hide-details
-          class="mb-4"
-          :disabled="!form.notifications_enabled"
         />
-        
         <v-switch
           v-model="form.notification_vibration"
           :label="$t('settings.notificationVibration')"
+          color="primary"
           density="comfortable"
           hide-details
-          :disabled="!form.notifications_enabled"
         />
       </v-card-text>
     </v-card>
 
-    <!-- Configuración de chat -->
-    <v-card class="mb-6">
-      <v-card-title>
-        {{ $t('chat.chat') }}
-      </v-card-title>
+    <!-- Chat -->
+    <v-card>
+      <v-card-title>{{ $t('chat.chat') }}</v-card-title>
       <v-card-text>
-        <v-switch
-          v-model="form.auto_translate"
-          :label="$t('settings.autoTranslate')"
-          density="comfortable"
-          hide-details
-          class="mb-4"
-        />
-        
-        <v-switch
-          v-model="form.show_original"
-          :label="$t('settings.showOriginal')"
-          density="comfortable"
-          hide-details
-          class="mb-4"
-          :disabled="!form.auto_translate"
-        />
-        
-        <v-select
-          v-model="form.audio_quality"
-          :label="$t('settings.audioQuality')"
-          :placeholder="$t('settings.audioQuality')"
-          :items="audioQualityOptions"
-          item-title="text"
-          item-value="value"
-          density="comfortable"
-          variant="outlined"
-          class="mb-4"
-        />
-        
         <v-switch
           v-model="form.play_audio_automatically"
           :label="$t('settings.playAutomatically')"
+          color="primary"
           density="comfortable"
           hide-details
         />
       </v-card-text>
     </v-card>
 
-    <!-- Configuración de privacidad -->
-    <v-card class="mb-6">
-      <v-card-title>
-        {{ $t('settings.privacy') }}
-      </v-card-title>
-      <v-card-text>
-        <v-switch
-          v-model="form.show_online_status"
-          :label="$t('settings.showOnlineStatus')"
-          density="comfortable"
-          hide-details
-          class="mb-4"
-        />
-        
-        <v-switch
-          v-model="form.show_read_receipts"
-          :label="$t('settings.showReadReceipts')"
-          density="comfortable"
-          hide-details
-        />
-      </v-card-text>
-    </v-card>
-
-    <!-- Botón de guardar -->
-    <v-btn
-      color="primary"
-      size="large"
-      :loading="loading"
-      @click="handleSave"
-      block
-    >
+    <v-btn color="primary" size="large" :loading="loading" block @click="handleSave">
       <v-icon icon="mdi-content-save" start />
       {{ $t('common.save') }}
     </v-btn>
 
-    <!-- Snackbar -->
     <v-snackbar v-model="showSnackbar" :color="snackbarColor" timeout="3000">
       {{ snackbarText }}
-      <template v-slot:actions>
-        <v-btn variant="text" @click="showSnackbar = false">
-          {{ $t('common.close') }}
-        </v-btn>
-      </template>
     </v-snackbar>
   </div>
 </template>
@@ -166,43 +115,26 @@ import { useI18n } from 'vue-i18n';
 import { useThemeStore } from '@/stores/themeStore';
 import { useUserStore } from '@/stores/userStore';
 import { useAuthStore } from '@/stores/authStore';
-
-// ============================================
-// STORES
-// ============================================
+import { CHAT_BACKGROUNDS } from '@/utils/chatBackgrounds';
+import ProfilePhotoEditor from '@/components/common/ProfilePhotoEditor.vue';
 
 const themeStore = useThemeStore();
 const { t } = useI18n();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 
-// ============================================
-// ESTADO LOCAL
-// ============================================
-
 const loading = ref(false);
 const showSnackbar = ref(false);
 const snackbarText = ref('');
 const snackbarColor = ref('info');
 
+// Solo lo que la app usa de verdad (los demás interruptores no tenían efecto y se quitaron)
 const form = ref({
-  theme: '',
-  notifications_enabled: true,
+  theme: themeStore.currentTheme || 'system',
   notification_sound: true,
   notification_vibration: true,
-  auto_translate: true,
-  show_original: true,
-  audio_quality: 'medium',
   play_audio_automatically: false,
-  show_online_status: true,
-  show_read_receipts: true,
 });
-
-const originalForm = ref({});
-
-// ============================================
-// COMPUTED
-// ============================================
 
 const themeOptions = computed(() => [
   { text: t('settings.system'), value: 'system' },
@@ -210,15 +142,10 @@ const themeOptions = computed(() => [
   { text: t('settings.dark'), value: 'dark' },
 ]);
 
-const audioQualityOptions = computed(() => [
-  { text: t('settings.low'), value: 'low' },
-  { text: t('settings.medium'), value: 'medium' },
-  { text: t('settings.high'), value: 'high' },
-]);
-
-// ============================================
-// MÉTODOS
-// ============================================
+// Muestra de cada fondo en la versión del tema actual
+const backgroundOptions = computed(() =>
+  CHAT_BACKGROUNDS.map(option => ({ id: option.id, preview: themeStore.isDark ? option.dark : option.light }))
+);
 
 const fetchSettings = async () => {
   try {
@@ -229,33 +156,21 @@ const fetchSettings = async () => {
   const settings = userStore.settings || {};
   form.value = {
     theme: themeStore.currentTheme || 'system',
-    notifications_enabled: settings.notifications_enabled !== false,
     notification_sound: settings.notification_sound !== false,
     notification_vibration: settings.notification_vibration !== false,
-    auto_translate: settings.auto_translate !== false,
-    show_original: settings.show_original !== false,
-    audio_quality: settings.audio_quality || 'medium',
     play_audio_automatically: settings.play_audio_automatically || false,
-    show_online_status: settings.show_online_status !== false,
-    show_read_receipts: settings.show_read_receipts !== false,
   };
-  originalForm.value = { ...form.value };
 };
 
 const changeTheme = (theme) => {
   themeStore.setTheme(theme);
-  form.value.theme = theme;
 };
 
 const handleSave = async () => {
   try {
     loading.value = true;
-    
-    const settings = { ...form.value };
-    await userStore.updateSettings(settings, authStore.user?.id);
-    
+    await userStore.updateSettings({ ...form.value }, authStore.user?.id);
     showSnackbarMessage(t('settings.saved'), 'success');
-    originalForm.value = { ...form.value };
   } catch (error) {
     console.error('Error al guardar preferencias:', error);
     showSnackbarMessage(t('settings.saveError'), 'error');
@@ -270,10 +185,6 @@ const showSnackbarMessage = (text, color = 'info') => {
   showSnackbar.value = true;
 };
 
-// ============================================
-// MONTAJE
-// ============================================
-
 onMounted(() => {
   fetchSettings();
 });
@@ -283,34 +194,91 @@ onMounted(() => {
 .preferences-settings-view {
   max-width: 600px;
   margin: 0 auto;
-  
+  padding: 16px 12px 32px;
+
   .settings-header {
     margin-bottom: 16px;
   }
-  
+
   :deep(.v-card) {
     border-radius: 12px;
     margin-bottom: 16px;
-    
+
     .v-card-title {
-      padding: 16px 20px 0;
+      padding: 16px 20px 8px;
     }
-    
+
     .v-card-text {
       padding: 0 20px 16px;
-      
-      :deep(.v-switch) {
-        .v-label {
-          font-size: 0.9rem;
-        }
-      }
-      
-      :deep(.v-select) {
-        .v-field {
-          padding: 0 12px;
-        }
-      }
     }
+  }
+}
+
+// Fondos: cada muestra lleva dos burbujas, como se vería el chat
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 10px;
+}
+
+.background-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+
+  &__preview {
+    position: relative;
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 5;
+    border: 2px solid var(--app-border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  &.is-selected &__preview {
+    border-color: rgb(var(--v-theme-primary));
+    box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.25);
+  }
+
+  &__bubble {
+    position: absolute;
+    height: 14px;
+    border-radius: 7px;
+
+    &--in {
+      top: 24%;
+      left: 10%;
+      width: 55%;
+      background: var(--app-bubble-received, #fff);
+      border: 1px solid var(--app-border);
+    }
+
+    &--out {
+      top: 50%;
+      right: 10%;
+      width: 50%;
+      background: rgb(var(--v-theme-primary));
+    }
+  }
+
+  &__check {
+    position: absolute;
+    right: 6px;
+    bottom: 6px;
+    border-radius: 50%;
+    background: rgb(var(--v-theme-surface));
+  }
+
+  &__name {
+    font-size: 0.78rem;
+    text-align: center;
   }
 }
 </style>

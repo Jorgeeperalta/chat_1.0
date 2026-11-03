@@ -170,7 +170,7 @@ import { useI18n } from 'vue-i18n';
 import { VAvatar, VBadge, VImg } from 'vuetify/components';
 import api from '@/services/api';
 import { useConversationStore } from '@/stores/conversationStore';
-import { getUserDisplayName, getInitials } from '@/utils/conversationDisplay';
+import { getUserDisplayName, getInitials, getAvatarColor } from '@/utils/conversationDisplay';
 
 // Mismo formato que la validación del backend (GET /api/users/search).
 const MIN_USERNAME_LENGTH = 3;
@@ -204,7 +204,7 @@ const UserAvatar = (props) => {
   const name = getUserDisplayName(props.user);
   const avatar = h(
     VAvatar,
-    { size: 44, color: props.user.avatar_url ? undefined : 'primary' },
+    { size: 44, color: props.user.avatar_url ? undefined : getAvatarColor(props.user.id) },
     () => props.user.avatar_url
       ? h(VImg, { src: props.user.avatar_url, cover: true })
       : h('span', { class: 'text-white font-weight-bold' }, getInitials(name))

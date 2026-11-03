@@ -23,22 +23,6 @@
     @mouseenter="hover = true"
     @mouseleave="hover = false"
   >
-    <!-- Avatar del remitente (solo para mensajes recibidos) -->
-    <div
-      v-if="!isCurrentUser && !compact"
-      class="message-avatar"
-    >
-      <v-avatar
-        :image="senderAvatar"
-        :size="avatarSize"
-        :color="avatarColor"
-      >
-        <span v-if="!senderAvatar" class="text-white text-subtitle-2 font-weight-bold">
-          {{ senderInitials }}
-        </span>
-      </v-avatar>
-    </div>
-
     <!-- Contenido del mensaje: tocarlo (o clic derecho) abre las acciones -->
     <div
       class="message-content"
@@ -87,6 +71,7 @@
         <span
           v-if="!isCurrentUser"
           class="message-sender text-caption font-weight-medium"
+          :style="{ color: senderColor }"
         >
           {{ senderName }}
         </span>
@@ -310,7 +295,7 @@ import { useUserStore } from '@/stores/userStore';
 import { useTranslationStore } from '@/stores/translationStore';
 import { useChatStore } from '@/stores/chatStore';
 import VoiceMessagePlayer from './VoiceMessagePlayer.vue';
-import { getMessagePreview } from '@/utils/conversationDisplay';
+import { getMessagePreview, getAvatarColor } from '@/utils/conversationDisplay';
 
 // ============================================
 // PROPS
@@ -340,10 +325,6 @@ const props = defineProps({
   autoTranslate: {
     type: Boolean,
     default: null, // null = usar configuración del usuario
-  },
-  avatarSize: {
-    type: [Number, String],
-    default: 36,
   },
   // Permisos calculados por la vista (dependen del rol en el grupo)
   canEdit: {
@@ -486,22 +467,9 @@ const senderName = computed(() => {
   return `${sender.value.first_name || ''} ${sender.value.last_name || ''}`.trim() || sender.value.username || t('chat.user');
 });
 
-const senderInitials = computed(() => {
-  if (!sender.value) return '?';
-  const firstName = sender.value.first_name || '';
-  const lastName = sender.value.last_name || '';
-  return (firstName.charAt(0) + lastName.charAt(0)).toUpperCase();
-});
-
-const senderAvatar = computed(() => {
-  if (!sender.value) return '';
-  return sender.value.avatar_url || '';
-});
-
-const avatarColor = computed(() => {
-  if (isCurrentUser.value) return 'primary';
-  return 'secondary';
-});
+// Sin avatar en la burbuja: el nombre del emisor ya dice quién escribió, y lleva su color
+// (el mismo de su avatar en la lista de chats y en el encabezado)
+const senderColor = computed(() => getAvatarColor(props.message.sender_id));
 
 const STATUS_ICONS = {
   sending: 'mdi-clock-outline',
@@ -788,23 +756,14 @@ const formatDate = (dateString) => {
       padding: 4px 12px;
     }
 
-    .message-avatar {
-      display: none;
-    }
   }
 
   &.message-compact {
-    .message-avatar,
     .message-header,
     .message-footer {
       display: none;
     }
   }
-}
-
-// Avatar del remitente
-.message-avatar {
-  flex-shrink: 0;
 }
 
 // Contenido del mensaje

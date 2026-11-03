@@ -418,6 +418,19 @@ export const useConversationStore = defineStore('conversation', () => {
   };
 
   /**
+   * Un contacto cambió (o quitó) su foto de perfil
+   * @param {{userId: number, avatar_url: string|null}} data
+   */
+  const handleUserProfileUpdated = (data) => {
+    conversations.value.forEach(conversation => {
+      const user = conversation.users?.find(u => Number(u.id) === Number(data.userId));
+      if (user) user.avatar_url = data.avatar_url;
+    });
+    // Los mensajes buscan primero al remitente en el userStore
+    userStore.updateUser(Number(data.userId), { avatar_url: data.avatar_url });
+  };
+
+  /**
    * Marca una conversación como leída
    * @param {number} conversationId - ID de la conversación
    */
@@ -620,6 +633,7 @@ export const useConversationStore = defineStore('conversation', () => {
     handleUserJoined,
     handleUserLeft,
     handleUserStatusChanged,
+    handleUserProfileUpdated,
     markAsRead,
     toggleArchive,
     togglePin,

@@ -11,7 +11,9 @@ const { body, validationResult, param, query } = require('express-validator');
 const authMiddleware = require('../middleware/authMiddleware');
 const { models } = require('../models');
 const logger = require('../utils/logger');
+const { pickFields } = require('../utils/pickFields');
 const storageService = require('../services/storageService');
+const { userRoom } = require('../utils/socketRooms');
 const multer = require('multer');
 
 // Configurar multer para manejo de archivos
@@ -29,7 +31,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`), false);
+      cb(Object.assign(new Error(`Tipo de archivo no permitido: ${file.mimetype}`), { statusCode: 400 }), false);
     }
   },
 });
@@ -46,6 +48,30 @@ const PUBLIC_USER_ATTRIBUTES = [
   'native_language_id',
   'preferred_language_id',
 ];
+
+/**
+ * Usuario sin datos privados, con sus idiomas (lo mismo que devuelve /api/auth/me)
+ */
+const findPublicUser = (userId) => models.User.findByPk(userId, {
+  attributes: { exclude: ['password_hash'] },
+  include: [
+    { model: models.Language, as: 'nativeLanguage', attributes: ['id', 'code', 'name', 'native_name'] },
+    { model: models.Language, as: 'preferredLanguage', attributes: ['id', 'code', 'name', 'native_name'] },
+  ],
+});
+
+/**
+ * La foto nueva (o ninguna) aparece al instante en la lista de chats y los mensajes de sus
+ * contactos, y en sus otros dispositivos
+ */
+const notifyAvatarChanged = async (io, user) => {
+  if (!io) return;
+  const payload = { userId: user.id, avatar_url: user.avatar_url };
+  const contactIds = await models.UserConversation.findContactIds(user.id);
+  for (const id of new Set([...contactIds, user.id])) {
+    io.to(userRoom(id)).emit('user_profile_updated', payload);
+  }
+};
 
 /**
  * @route GET /api/users
@@ -208,7 +234,8 @@ router.patch(
       }
 
       const { userId } = req.params;
-      const updates = { ...req.body };
+      // Solo los campos validados arriba (antes se guardaba todo lo que llegaba, incluido el email)
+      const updates = pickFields(req.body, ['first_name', 'last_name', 'bio', 'is_active']);
 
       const user = await models.User.findByPk(userId);
 
@@ -266,29 +293,52 @@ router.patch(
         });
       }
 
-      // Guardar archivo
-      const avatarFile = await storageService.saveImageFile(
-        req.file.buffer,
-        req.file.originalname,
-        mimetype
-      );
+      // Guardar archivo (en avatars/; la extensión la decide el servidor según el tipo)
+      const avatarFile = await storageService.saveFile(req.file.buffer, req.file.originalname, mimetype, 'avatars');
 
-      // Actualizar usuario
       const user = await models.User.findByPk(userId);
-      
-      // Eliminar avatar anterior si existe
-      if (user.avatar_url) {
-        await storageService.deleteFile(user.avatar_url);
+      const previousUrl = user.avatar_url;
+      await user.update({ avatar_url: avatarFile.url });
+
+      // La foto anterior ya no se usa
+      if (previousUrl) {
+        await storageService.deleteFile(previousUrl).catch(() => {});
       }
 
-      await user.update({ avatar_url: avatarFile.url });
+      await notifyAvatarChanged(req.app.get('io'), user);
 
       res.json({
         success: true,
         avatarUrl: avatarFile.url,
+        user: await findPublicUser(userId),
       });
     } catch (error) {
       logger.error(`❌ Error al actualizar avatar del usuario ${req.params.userId}: ${error.message}`);
+      next(error);
+    }
+  }
+);
+
+/**
+ * @route DELETE /api/users/:userId/avatar
+ * @description Quita la foto de perfil (vuelve el avatar con iniciales)
+ * @access Privado (solo propietario)
+ */
+router.delete(
+  '/:userId/avatar',
+  authMiddleware.verifyToken,
+  authMiddleware.verifyOwner('userId'),
+  async (req, res, next) => {
+    try {
+      const user = await models.User.findByPk(req.params.userId);
+      if (user.avatar_url) {
+        await storageService.deleteFile(user.avatar_url).catch(() => {});
+        await user.update({ avatar_url: null });
+        await notifyAvatarChanged(req.app.get('io'), user);
+      }
+      res.json({ success: true, user: await findPublicUser(user.id) });
+    } catch (error) {
+      logger.error(`❌ Error al quitar avatar del usuario ${req.params.userId}: ${error.message}`);
       next(error);
     }
   }

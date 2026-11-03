@@ -60,3 +60,33 @@ export const compressImage = async (file) => {
     return file;
   }
 };
+
+/**
+ * Foto de perfil: recorte cuadrado desde el centro, 512 px, JPEG.
+ * Así entra justa en el círculo del avatar y pesa ~30-80 KB.
+ * @param {File} file
+ * @param {number} [size=512]
+ * @returns {Promise<File>}
+ */
+export const cropSquareImage = async (file, size = 512) => {
+  const image = await loadImage(file);
+  const side = Math.min(image.width, image.height);
+  const target = Math.min(size, side);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = target;
+  canvas.height = target;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, target, target);
+  context.drawImage(
+    image,
+    (image.width - side) / 2, (image.height - side) / 2, side, side,
+    0, 0, target, target
+  );
+  image.close?.();
+
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', QUALITY));
+  if (!blob) throw new Error('No se pudo procesar la imagen');
+  return new File([blob], 'avatar.jpg', { type: 'image/jpeg', lastModified: Date.now() });
+};

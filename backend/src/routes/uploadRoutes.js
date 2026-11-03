@@ -27,7 +27,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`), false);
+      cb(Object.assign(new Error(`Tipo de archivo no permitido: ${file.mimetype}`), { statusCode: 400 }), false);
     }
   },
 });
@@ -201,49 +201,6 @@ router.post(
   }
 );
 
-/**
- * @route DELETE /api/upload
- * @description Elimina un archivo
- * @access Privado
- */
-router.delete(
-  '/',
-  authMiddleware.verifyToken,
-  [
-    body('url').isString().withMessage('La URL del archivo es obligatoria'),
-  ],
-  async (req, res, next) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({
-          error: 'Validation Error',
-          details: errors.array(),
-        });
-      }
-
-      const { url } = req.body;
-
-      const deleted = await storageService.deleteFile(url);
-
-      if (deleted) {
-        logger.info(`🗑️ Archivo eliminado por usuario ${req.userId}: ${url}`);
-        res.json({
-          success: true,
-          message: 'Archivo eliminado correctamente',
-        });
-      } else {
-        res.status(404).json({
-          success: false,
-          message: 'Archivo no encontrado',
-        });
-      }
-    } catch (error) {
-      logger.error(`❌ Error al eliminar archivo: ${error.message}`);
-      next(error);
-    }
-  }
-);
 
 /**
  * @route GET /api/upload/config

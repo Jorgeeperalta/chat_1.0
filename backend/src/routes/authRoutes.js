@@ -10,6 +10,7 @@ const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs');
 const config = require('../config');
 const logger = require('../utils/logger');
+const { pickFields } = require('../utils/pickFields');
 const { models } = require('../models');
 const { generateToken, generateRefreshToken } = require('../middleware/authMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
@@ -108,8 +109,9 @@ router.post(
         password_hash: password,
         first_name: first_name || null,
         last_name: last_name || null,
-        native_language_id,
-        preferred_language_id: preferred_language_id || null,
+        // Un solo idioma: el que elige al registrarse es en el que escribe y al que se le traduce
+        native_language_id: preferred_language_id || native_language_id,
+        preferred_language_id: preferred_language_id || native_language_id,
       });
 
       // Crear preferencias por defecto
@@ -416,28 +418,22 @@ router.patch(
         });
       }
 
-      const updates = { ...req.body };
+      // Solo estos campos: antes se guardaba todo lo que llegaba (email, is_active, ...)
+      const updates = pickFields(req.body, ['first_name', 'last_name', 'bio']);
 
-      // Si se actualiza el idioma nativo, verificar que existe
-      if (updates.native_language_id) {
-        const language = await models.Language.findByPk(updates.native_language_id);
+      // Un solo idioma por usuario: llegue el preferido o el nativo, se guarda en las dos
+      // columnas. Si quedaban distintas, la traducción salía cruzada o fallaba.
+      const languageId = req.body.preferred_language_id || req.body.native_language_id;
+      if (languageId) {
+        const language = await models.Language.findByPk(languageId);
         if (!language) {
           return res.status(400).json({
             error: 'Bad Request',
-            message: 'Idioma nativo no válido',
+            message: 'Idioma no válido',
           });
         }
-      }
-
-      // Si se actualiza el idioma preferido, verificar que existe
-      if (updates.preferred_language_id) {
-        const language = await models.Language.findByPk(updates.preferred_language_id);
-        if (!language) {
-          return res.status(400).json({
-            error: 'Bad Request',
-            message: 'Idioma preferido no válido',
-          });
-        }
+        updates.native_language_id = language.id;
+        updates.preferred_language_id = language.id;
       }
 
       // Actualizar usuario

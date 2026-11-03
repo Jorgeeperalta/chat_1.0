@@ -25,9 +25,9 @@
   </v-snackbar>
 
   <!-- Instalar la app -->
-  <!-- No dentro de un chat (tapaba el cuadro de escribir): se ofrece en la lista de chats -->
+  <!-- Solo en la lista de chats: abajo tapaba el cuadro de escribir y el botón Guardar de Preferencias -->
   <v-snackbar
-    :model-value="showInstall && !needRefresh && !isChatScreen"
+    :model-value="showInstall && !needRefresh && route.name === 'home'"
     :timeout="-1"
     location="bottom"
     multi-line

@@ -215,6 +215,13 @@ export const useSocketStore = defineStore('socket', () => {
       conversationStore.applyParticipants(data.conversation);
     });
 
+    // Evento: un contacto (o yo, desde otro dispositivo) cambió la foto de perfil
+    socket.value.on('user_profile_updated', (data) => {
+      conversationStore.handleUserProfileUpdated(data);
+      chatStore.applySenderAvatar(data);
+      if (Number(data.userId) === Number(authStore.user?.id)) authStore.setAvatarUrl(data.avatar_url);
+    });
+
     // Evento: me eliminaron de un grupo
     socket.value.on('removed_from_conversation', (data) => {
       conversationStore.removeConversation(data.conversationId);

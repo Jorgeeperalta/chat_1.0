@@ -356,6 +356,47 @@ export const useAuthStore = defineStore('auth', () => {
   };
 
   /**
+   * Sube (o reemplaza) la foto de perfil
+   * @param {File} file - Imagen ya recortada (ver cropSquareImage)
+   * @returns {Promise<User>}
+   */
+  const uploadAvatar = async (file) => {
+    const form = new FormData();
+    form.append('avatar', file, file.name);
+    const response = await api.patch(`/api/users/${user.value.id}/avatar`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 2 * 60 * 1000,
+    });
+    user.value = response.data.user;
+    userStore.setUser(user.value);
+    saveAuth();
+    return user.value;
+  };
+
+  /**
+   * Quita la foto de perfil (vuelve el avatar con iniciales)
+   * @returns {Promise<User>}
+   */
+  const removeAvatar = async () => {
+    const response = await api.delete(`/api/users/${user.value.id}/avatar`);
+    user.value = response.data.user;
+    userStore.setUser(user.value);
+    saveAuth();
+    return user.value;
+  };
+
+  /**
+   * Otro dispositivo de este usuario cambió la foto: reflejarla acá también
+   * @param {string|null} avatarUrl
+   */
+  const setAvatarUrl = (avatarUrl) => {
+    if (!user.value) return;
+    user.value = { ...user.value, avatar_url: avatarUrl };
+    userStore.setUser(user.value);
+    saveAuth();
+  };
+
+  /**
    * Verifica si el usuario está autenticado
    * @returns {boolean}
    */
@@ -394,6 +435,9 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUser,
     changePassword,
     updateProfile,
+    uploadAvatar,
+    removeAvatar,
+    setAvatarUrl,
     checkAuth,
   };
 });

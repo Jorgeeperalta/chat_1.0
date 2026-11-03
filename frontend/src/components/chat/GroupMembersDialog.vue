@@ -55,7 +55,7 @@
                 @click="addMember(user)"
               >
                 <template #prepend>
-                  <v-avatar size="40" class="mr-3" :color="user.avatar_url ? undefined : 'primary'">
+                  <v-avatar size="40" class="mr-3" :color="user.avatar_url ? undefined : getAvatarColor(user.id)">
                     <v-img v-if="user.avatar_url" :src="user.avatar_url" cover />
                     <span v-else class="text-white font-weight-bold">{{ getInitials(displayName(user)) }}</span>
                   </v-avatar>
@@ -90,7 +90,7 @@
             :subtitle="`@${member.username}`"
           >
             <template #prepend>
-              <v-avatar size="40" class="mr-3" :color="member.avatar_url ? undefined : 'primary'">
+              <v-avatar size="40" class="mr-3" :color="member.avatar_url ? undefined : getAvatarColor(member.id)">
                 <v-img v-if="member.avatar_url" :src="member.avatar_url" cover />
                 <span v-else class="text-white font-weight-bold">{{ getInitials(displayName(member)) }}</span>
               </v-avatar>
@@ -139,7 +139,7 @@ import { useI18n } from 'vue-i18n';
 import api from '@/services/api';
 import { useAuthStore } from '@/stores/authStore';
 import { useConversationStore } from '@/stores/conversationStore';
-import { getUserDisplayName, getInitials } from '@/utils/conversationDisplay';
+import { getUserDisplayName, getInitials, getAvatarColor } from '@/utils/conversationDisplay';
 
 // Igual que en NewConversationView: búsqueda exacta por nombre de usuario
 const MIN_USERNAME_LENGTH = 3;

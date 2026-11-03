@@ -67,7 +67,7 @@
               :color="chat.online ? 'success' : 'grey-lighten-1'"
               class="mr-4"
             >
-              <v-avatar size="48" :color="chat.avatarUrl ? undefined : 'primary'">
+              <v-avatar size="48" :color="chat.avatarUrl ? undefined : chat.color">
                 <v-img v-if="chat.avatarUrl" :src="chat.avatarUrl" cover />
                 <v-icon v-else-if="chat.isGroup" icon="mdi-account-group" color="white" />
                 <span v-else class="text-white text-subtitle-1 font-weight-bold">{{ chat.initials }}</span>
@@ -110,6 +110,7 @@ import {
   getConversationTitle,
   getInitials,
   formatRelativeTime,
+  getConversationColor,
 } from '@/utils/conversationDisplay';
 
 const { t, locale } = useI18n();
@@ -147,6 +148,7 @@ const chats = computed(() =>
           isGroup,
           title,
           initials: getInitials(title),
+          color: getConversationColor(conversation, currentUserId.value),
           avatarUrl: conversation.avatar_url || '',
           username: '',
           online: onlineCount > 0,
@@ -163,6 +165,7 @@ const chats = computed(() =>
         isGroup,
         title,
         initials: getInitials(title),
+        color: getConversationColor(conversation, currentUserId.value),
         avatarUrl: user?.avatar_url || '',
         username: user?.username || '',
         online: user?.status === 'online',

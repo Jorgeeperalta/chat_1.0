@@ -24,7 +24,15 @@
         offset-y="3"
         :color="isOtherOnline ? 'success' : 'grey-lighten-1'"
       >
-        <v-avatar :color="conversationAvatar ? undefined : 'primary'" size="40">
+        <!-- Con foto: al tocarla se ve en grande -->
+        <v-avatar
+          :color="conversationAvatar ? undefined : getConversationColor(currentConversation, currentUserId)"
+          size="40"
+          :class="{ 'is-clickable': conversationAvatar }"
+          :role="conversationAvatar ? 'button' : undefined"
+          :aria-label="conversationAvatar ? $t('profile.viewPhoto') : undefined"
+          @click="conversationAvatar && (photoViewer = true)"
+        >
           <v-img v-if="conversationAvatar" :src="conversationAvatar" cover />
           <v-icon v-else-if="isGroup" icon="mdi-account-group" color="white" />
           <span v-else class="text-white font-weight-bold">{{ conversationInitials }}</span>
@@ -60,7 +68,7 @@
     />
 
     <!-- Área de mensajes -->
-    <div ref="messagesContainer" class="messages-container">
+    <div ref="messagesContainer" class="messages-container" :style="{ background: themeStore.chatBackgroundStyle }">
       <div v-if="!messages.length && !chatStore.isLoading" class="empty-messages">
         <v-icon icon="mdi-message-text-outline" size="40" />
         <p>{{ $t('chat.noMessages') }}</p>
@@ -183,6 +191,22 @@
       />
     </div>
 
+    <!-- Foto de perfil en grande -->
+    <v-dialog v-model="photoViewer" max-width="480">
+      <v-card class="photo-viewer">
+        <v-img :src="conversationAvatar" :alt="conversationTitle" aspect-ratio="1" cover />
+        <v-card-title class="text-center">{{ conversationTitle }}</v-card-title>
+        <v-btn
+          class="photo-viewer__close"
+          icon="mdi-close"
+          variant="flat"
+          size="small"
+          :aria-label="$t('common.close')"
+          @click="photoViewer = false"
+        />
+      </v-card>
+    </v-dialog>
+
     <!-- Confirmación para eliminar un mensaje -->
     <v-dialog v-model="deleteDialog" max-width="360">
       <v-card>
@@ -208,17 +232,20 @@ import { useUserStore } from '@/stores/userStore';
 import { useConversationStore } from '@/stores/conversationStore';
 import { useChatStore } from '@/stores/chatStore';
 import { useSocketStore } from '@/stores/socketStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { useI18n } from 'vue-i18n';
 import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
 import GroupMembersDialog from '@/components/chat/GroupMembersDialog.vue';
 import { compressImage } from '@/utils/imageCompression';
+import { resolveMediaUrl } from '@/utils/media';
 import {
   getOtherUser,
   getConversationTitle,
   getInitials,
   formatRelativeTime,
   getMessagePreview,
+  getConversationColor,
 } from '@/utils/conversationDisplay';
 
 // ============================================
@@ -240,6 +267,7 @@ const userStore = useUserStore();
 const conversationStore = useConversationStore();
 const chatStore = useChatStore();
 const socketStore = useSocketStore();
+const themeStore = useThemeStore();
 
 // ============================================
 // ESTADO LOCAL
@@ -288,8 +316,10 @@ const conversationTitle = computed(() =>
 const conversationInitials = computed(() => getInitials(conversationTitle.value));
 
 const conversationAvatar = computed(() =>
-  isGroup.value ? currentConversation.value?.avatar_url : otherUser.value?.avatar_url
+  resolveMediaUrl(isGroup.value ? currentConversation.value?.avatar_url : otherUser.value?.avatar_url)
 );
+
+const photoViewer = ref(false);
 
 const isOtherOnline = computed(() => !isGroup.value && otherUser.value?.status === 'online');
 
@@ -884,6 +914,22 @@ watch(() => conversationId.value, async (newId, oldId) => {
   .conversation-view .conversation-header {
     min-height: 56px;
     padding: 6px 8px;
+  }
+}
+
+.is-clickable {
+  cursor: pointer;
+}
+
+.photo-viewer {
+  position: relative;
+
+  .photo-viewer__close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
   }
 }
 </style>

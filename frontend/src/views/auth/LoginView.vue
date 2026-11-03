@@ -61,17 +61,6 @@
         class="mb-2"
       />
 
-      <!-- Enlace para olvidé contraseña -->
-      <div class="forgot-password mb-4">
-        <v-btn
-          variant="text"
-          color="primary"
-          size="small"
-          :to="{ name: 'forgot-password' }"
-        >
-          {{ $t('auth.forgotPassword') }}
-        </v-btn>
-      </div>
 
       <!-- Botón de iniciar sesión -->
       <v-btn
@@ -87,37 +76,6 @@
         <v-icon icon="mdi-login" start />
         {{ $t('auth.login') }}
       </v-btn>
-
-      <!-- Opciones de login -->
-      <div class="login-options">
-        <div class="divider d-flex align-center text-caption text-grey">
-          <v-divider flex-grow="1" />
-          <span class="px-2">{{ $t('common.or') }}</span>
-          <v-divider flex-grow="1" />
-        </div>
-
-        <!-- Botones de redes sociales (futuro) -->
-        <div class="social-login d-flex justify-center gap-4 my-4">
-          <v-btn
-            variant="outlined"
-            color="grey"
-            size="small"
-            :disabled="true"
-          >
-            <v-icon icon="mdi-google" start />
-            Google
-          </v-btn>
-          <v-btn
-            variant="outlined"
-            color="grey"
-            size="small"
-            :disabled="true"
-          >
-            <v-icon icon="mdi-facebook" start />
-            Facebook
-          </v-btn>
-        </div>
-      </div>
 
       <!-- Enlace a registrar -->
       <div class="register-link text-center">
@@ -262,26 +220,6 @@ const handleLogin = async () => {
       }
     }
 
-    .forgot-password {
-      text-align: right;
-    }
-
-    .divider {
-      color: rgba(0, 0, 0, 0.54);
-      margin: 16px 0;
-    }
-
-    .social-login {
-      .v-btn {
-        flex: 1;
-        min-width: 120px;
-        
-        .v-icon {
-          margin-right: 4px;
-        }
-      }
-    }
-
     .register-link {
       margin-top: 16px;
     }
@@ -291,16 +229,6 @@ const handleLogin = async () => {
   :deep(.error) {
     background-color: rgba(244, 67, 54, 0.1);
     color: #FF5252;
-  }
-}
-
-// Responsive
-@media (max-width: 768px) {
-  .login-view {
-    .social-login {
-      flex-direction: column;
-      gap: 8px;
-    }
   }
 }
 </style>

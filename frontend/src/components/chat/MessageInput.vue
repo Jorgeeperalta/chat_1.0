@@ -62,12 +62,10 @@
           class="action-btn"
           :disabled="disabled || isRecording"
           :aria-label="$t('chat.emoji')"
+          :title="$t('chat.emoji')"
           @click="toggleEmojiPicker"
         >
           <v-icon icon="mdi-emoticon-happy-outline" />
-          <v-tooltip activator="parent" location="top">
-            {{ $t('chat.emoji') }}
-          </v-tooltip>
         </v-btn>
       </div>
 
@@ -130,9 +128,6 @@
               :aria-label="$t('settings.language')"
             >
               <v-icon :icon="currentLanguageIcon" />
-              <v-tooltip activator="parent" location="top">
-                {{ $t('settings.language') }}
-              </v-tooltip>
             </v-btn>
           </template>
           <v-list density="compact" nav>
@@ -160,15 +155,13 @@
           :disabled="disabled"
           :color="isRecording ? 'error' : undefined"
           :aria-label="isRecording ? $t('chat.cancelAudioRecording') : $t('chat.startAudioRecording')"
+          :title="isRecording ? $t('chat.cancelAudioRecording') : $t('chat.startAudioRecording')"
           @click="isRecording ? cancelRecording() : toggleRecording()"
           @touchstart="handleTouchStart"
           @touchend="handleTouchEnd"
           @touchcancel="handleTouchCancel"
         >
           <v-icon :icon="isRecording ? 'mdi-close' : 'mdi-microphone'" />
-          <v-tooltip activator="parent" location="top">
-            {{ isRecording ? $t('chat.cancelAudioRecording') : $t('chat.startAudioRecording') }}
-          </v-tooltip>
         </v-btn>
       </div>
     </div>
@@ -184,12 +177,10 @@
       :disabled="!canSend || disabled"
       :loading="loading"
       :aria-label="$t('chat.send')"
+      :title="$t('chat.send')"
       @click="sendMessage"
     >
       <v-icon icon="mdi-send" />
-      <v-tooltip activator="parent" location="top">
-        {{ $t('chat.send') }}
-      </v-tooltip>
     </v-btn>
 
     <!-- Selector de emoji -->

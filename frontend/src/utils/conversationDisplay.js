@@ -95,3 +95,33 @@ export const getMessagePreview = (message) => {
   const fileName = message.message_type === 'file' ? message.attachments?.[0]?.file_name : null;
   return `${icon} ${message.content || fileName || t(label)}`;
 };
+
+// Colores de los avatares de iniciales: todos con buen contraste para texto blanco
+const AVATAR_COLORS = [
+  '#E53935', '#D81B60', '#8E24AA', '#5E35B1', '#3949AB', '#1E88E5',
+  '#00838F', '#00897B', '#43A047', '#F4511E', '#6D4C41', '#546E7A',
+];
+
+/**
+ * Color fijo para el avatar de una persona o grupo: siempre el mismo para el mismo ID,
+ * así se reconoce a cada uno de un vistazo (como en WhatsApp o Gmail)
+ * @param {number|string} seed - ID del usuario (o 'g' + ID para un grupo)
+ * @returns {string} Color hexadecimal
+ */
+export const getAvatarColor = (seed) => {
+  const text = String(seed ?? '');
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+};
+
+/**
+ * Color del avatar de una conversación: el del otro participante o, en un grupo, uno propio del grupo
+ * @param {Object} conversation
+ * @param {number} currentUserId
+ * @returns {string}
+ */
+export const getConversationColor = (conversation, currentUserId) =>
+  conversation?.type === 'group'
+    ? getAvatarColor(`g${conversation.id}`)
+    : getAvatarColor(getOtherUser(conversation, currentUserId)?.id ?? conversation?.id);

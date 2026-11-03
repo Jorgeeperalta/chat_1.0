@@ -17,7 +17,6 @@ const AuthLayout = () => import('@/components/layout/AuthLayout.vue');
 // Vistas de autenticación
 const LoginView = () => import('@/views/auth/LoginView.vue');
 const RegisterView = () => import('@/views/auth/RegisterView.vue');
-const ForgotPasswordView = () => import('@/views/auth/ForgotPasswordView.vue');
 
 // Vistas principales
 const HomeView = () => import('@/views/HomeView.vue');
@@ -50,12 +49,6 @@ const routes = [
         component: RegisterView,
         meta: { requiresGuest: true },
       },
-      {
-        path: 'forgot-password',
-        name: 'forgot-password',
-        component: ForgotPasswordView,
-        meta: { requiresGuest: true },
-      },
     ],
   },
   {
@@ -73,6 +66,8 @@ const routes = [
         path: 'chat',
         name: 'chat',
         component: ChatView,
+        // /chat sola no muestra nada: la lista de chats está en Inicio
+        redirect: { name: 'home' },
         meta: { requiresAuth: true },
         children: [
           {

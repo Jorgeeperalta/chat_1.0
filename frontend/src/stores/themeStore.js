@@ -7,12 +7,17 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import { detectLocale } from '@/i18n';
+import { DEFAULT_BACKGROUND, getChatBackground } from '@/utils/chatBackgrounds';
 
 /**
  * @typedef {Object} ThemeState
  * @property {string} theme - Tema actual ('light', 'dark', 'system')
  * @property {boolean} isDark - Si el tema oscuro está activo
  */
+
+const readStorage = (key) => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
 
 export const useThemeStore = defineStore('theme', () => {
   // ============================================
@@ -23,6 +28,8 @@ export const useThemeStore = defineStore('theme', () => {
   // Idioma de las etiquetas: siempre el del navegador (no se elige dentro de la app)
   const language = ref(detectLocale());
   const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches);
+  // Fondo del chat: se elige en Preferencias y se guarda en este dispositivo
+  const chatBackground = ref(readStorage('chat_app_background') || DEFAULT_BACKGROUND);
   let initialized = false;
 
   // ============================================
@@ -39,9 +46,21 @@ export const useThemeStore = defineStore('theme', () => {
 
   const currentTheme = computed(() => theme.value);
 
+  // Valor CSS del fondo elegido, en su versión clara u oscura según el tema
+  const chatBackgroundStyle = computed(() => getChatBackground(chatBackground.value, isDark.value));
+
   // ============================================
   // ACCIONES
   // ============================================
+
+  /**
+   * Cambia el fondo del chat (se guarda en este dispositivo)
+   * @param {string} id - Uno de CHAT_BACKGROUNDS
+   */
+  const setChatBackground = (id) => {
+    chatBackground.value = id;
+    try { localStorage.setItem('chat_app_background', id); } catch { /* sin almacenamiento: solo por esta vez */ }
+  };
 
   /**
    * Inicializa el store
@@ -125,12 +144,16 @@ export const useThemeStore = defineStore('theme', () => {
     theme,
     language,
 
+    chatBackground,
+
     // Getters
     isDark,
     currentTheme,
+    chatBackgroundStyle,
 
     // Acciones
     initialize,
+    setChatBackground,
     setTheme,
     toggleTheme,
     getTheme,

@@ -124,27 +124,13 @@
           />
         </v-col>
 
-        <!-- Idioma nativo -->
-        <v-col cols="12" sm="6">
+        <!-- Un solo idioma: en el que escribe y al que se le traducen los mensajes -->
+        <v-col cols="12">
           <v-select
-            v-model="form.native_language_id"
-            :label="$t('settings.language') + ' (Native)'"
-            :rules="languageRules"
-            :items="languageOptions"
-            item-title="name"
-            item-value="id"
-            density="comfortable"
-            variant="outlined"
-            prepend-inner-icon="mdi-flag"
-            clearable
-          />
-        </v-col>
-
-        <!-- Idioma preferido -->
-        <v-col cols="12" sm="6">
-          <v-select
-            v-model="form.preferred_language_id"
-            :label="$t('settings.language') + ' (Preferred)'"
+            v-model="form.language_id"
+            :label="$t('auth.yourLanguage')"
+            :hint="$t('auth.yourLanguageHint')"
+            persistent-hint
             :rules="languageRules"
             :items="languageOptions"
             item-title="name"
@@ -152,7 +138,6 @@
             density="comfortable"
             variant="outlined"
             prepend-inner-icon="mdi-translate"
-            clearable
           />
         </v-col>
       </v-row>
@@ -244,6 +229,7 @@ import { useDisplay } from 'vuetify';
 import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
 import api from '@/services/api';
+import { detectLocale } from '@/i18n';
 
 // ============================================
 // STORES
@@ -275,8 +261,7 @@ const form = ref({
   email: '',
   password: '',
   confirmPassword: '',
-  native_language_id: null,
-  preferred_language_id: null,
+  language_id: null,
   acceptTerms: false,
 });
 
@@ -338,8 +323,8 @@ const handleRegister = async () => {
       username: form.value.username.trim(),
       email: form.value.email.trim(),
       password: form.value.password,
-      native_language_id: form.value.native_language_id,
-      preferred_language_id: form.value.preferred_language_id,
+      native_language_id: form.value.language_id,
+      preferred_language_id: form.value.language_id,
     });
 
     // Mostrar diálogo de éxito
@@ -369,16 +354,11 @@ const fetchLanguages = async () => {
     const response = await api.get('/api/languages');
     languageOptions.value = response.data.languages || [];
     
-    // Establecer valores por defecto
+    // Por defecto, el idioma del navegador (si la app lo tiene)
     if (languageOptions.value.length > 0) {
-      const defaultLanguage = languageOptions.value.find(l => l.code === 'es');
-      if (defaultLanguage) {
-        form.value.native_language_id = defaultLanguage.id;
-        form.value.preferred_language_id = defaultLanguage.id;
-      } else {
-        form.value.native_language_id = languageOptions.value[0].id;
-        form.value.preferred_language_id = languageOptions.value[0].id;
-      }
+      const defaultLanguage = languageOptions.value.find(l => l.code === detectLocale())
+        || languageOptions.value.find(l => l.code === 'es');
+      form.value.language_id = (defaultLanguage || languageOptions.value[0]).id;
     }
   } catch (error) {
     console.error('Error al cargar idiomas:', error);
@@ -388,8 +368,7 @@ const fetchLanguages = async () => {
       { id: 2, name: 'English', code: 'en' },
       { id: 3, name: 'Français', code: 'fr' },
     ];
-    form.value.native_language_id = 1;
-    form.value.preferred_language_id = 1;
+    form.value.language_id = 1;
   }
 };
 
