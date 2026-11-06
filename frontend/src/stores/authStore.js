@@ -307,6 +307,9 @@ export const useAuthStore = defineStore('auth', () => {
       const response = await api.get('/api/auth/me');
       user.value = response.data.user;
       userStore.setUser(user.value);
+      // Guardar lo actualizado (p. ej. una cuenta que pasó a empresarial): si no, al abrir la
+      // app sin conexión se usaban los datos viejos del login
+      saveAuth();
       isLoading.value = false;
       return user.value;
     } catch (err) {

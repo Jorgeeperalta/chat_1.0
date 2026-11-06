@@ -70,8 +70,10 @@ class TranslationService {
 
     const sourceLangName = languageNames[sourceLang] || sourceLang;
     const targetLangName = languageNames[targetLang] || targetLang;
+    // 'auto': idioma de origen desconocido (p. ej. un documento escaneado), lo detecta el modelo
+    const fromPart = sourceLang === 'auto' ? '' : ` from ${sourceLangName}`;
 
-    return `Translate the following text from ${sourceLangName} to ${targetLangName}. ` +
+    return `Translate the following text${fromPart} to ${targetLangName}. ` +
            `Return ONLY the translated text without any additional explanations or metadata. ` +
            `Preserve the original formatting, punctuation, and meaning.\n\n` +
            `Text to translate: ${text}`;

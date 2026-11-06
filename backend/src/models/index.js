@@ -114,6 +114,13 @@ if (models.Message) {
   models.Message.belongsTo(models.Language, { foreignKey: 'audio_transcription_language_id', as: 'transcriptionLanguage' });
   models.Message.hasMany(models.MessageAttachment, { foreignKey: 'message_id', as: 'attachments' });
   models.Message.belongsTo(models.Message, { foreignKey: 'reply_to_message_id', as: 'replyTo', constraints: false });
+  models.Message.hasMany(models.MessageVoiceTranslation, { foreignKey: 'message_id', as: 'voiceTranslations', constraints: false });
+}
+
+// Relaciones de MessageVoiceTranslation
+if (models.MessageVoiceTranslation) {
+  models.MessageVoiceTranslation.belongsTo(models.Message, { foreignKey: 'message_id', as: 'message', constraints: false });
+  models.MessageVoiceTranslation.belongsTo(models.Language, { foreignKey: 'language_id', as: 'language', constraints: false });
 }
 
 // Relaciones de MessageAttachment
@@ -142,6 +149,11 @@ if (models.PushSubscription) {
   models.PushSubscription.belongsTo(models.User, { foreignKey: 'user_id', as: 'user' });
 }
 
+// Relaciones de PasswordResetToken
+if (models.PasswordResetToken) {
+  models.PasswordResetToken.belongsTo(models.User, { foreignKey: 'user_id', as: 'user', constraints: false });
+}
+
 // Relaciones de ApiKey
 if (models.ApiKey) {
   // No tiene relaciones con otros modelos
@@ -161,7 +173,7 @@ const sync = async (options = {}) => {
 
 /**
  * Aplica los cambios de esquema que el código necesita y que una base existente puede no tener
- * (equivale a migrations/002, 003 y 004). Es idempotente: si ya están, no hace nada.
+ * (equivale a migrations/002 a 006). Es idempotente: si ya están, no hace nada.
  * Así basta con subir el código al hosting, sin correr SQL a mano.
  */
 const ensureSchema = async () => {
@@ -204,8 +216,39 @@ const ensureSchema = async () => {
     console.log('✅ Columna user_conversations.last_delivered_message_id creada');
   }
 
-  // Notificaciones push: sync() solo crea la tabla si no existe (no modifica una existente)
+  // Voz de las notas traducidas y cuentas empresariales (OCR)
+  const userColumns = await queryInterface.describeTable('users');
+  if (!userColumns.voice_gender) {
+    await queryInterface.addColumn('users', 'voice_gender', {
+      type: Sequelize.DataTypes.ENUM('female', 'male'),
+      allowNull: true,
+      defaultValue: null,
+    });
+    console.log('✅ Columna users.voice_gender creada');
+  }
+  if (!userColumns.account_type) {
+    await queryInterface.addColumn('users', 'account_type', {
+      type: Sequelize.DataTypes.ENUM('personal', 'business'),
+      allowNull: false,
+      defaultValue: 'personal',
+    });
+    console.log('✅ Columna users.account_type creada');
+  }
+
+  // Recuperar contraseña
+  if (!userColumns.password_changed_at) {
+    await queryInterface.addColumn('users', 'password_changed_at', {
+      type: Sequelize.DataTypes.DATE,
+      allowNull: true,
+      defaultValue: null,
+    });
+    console.log('✅ Columna users.password_changed_at creada');
+  }
+
+  // Tablas nuevas: sync() solo crea la tabla si no existe (no modifica una existente)
   await models.PushSubscription.sync();
+  await models.MessageVoiceTranslation.sync();
+  await models.PasswordResetToken.sync();
 
   await syncUserLanguages();
 };

@@ -17,6 +17,8 @@ const AuthLayout = () => import('@/components/layout/AuthLayout.vue');
 // Vistas de autenticación
 const LoginView = () => import('@/views/auth/LoginView.vue');
 const RegisterView = () => import('@/views/auth/RegisterView.vue');
+const ForgotPasswordView = () => import('@/views/auth/ForgotPasswordView.vue');
+const ResetPasswordView = () => import('@/views/auth/ResetPasswordView.vue');
 
 // Vistas principales
 const HomeView = () => import('@/views/HomeView.vue');
@@ -48,6 +50,18 @@ const routes = [
         name: 'register',
         component: RegisterView,
         meta: { requiresGuest: true },
+      },
+      {
+        path: 'forgot-password',
+        name: 'forgot-password',
+        component: ForgotPasswordView,
+        meta: { requiresGuest: true },
+      },
+      {
+        // Enlace del correo: se abre aunque haya una sesión iniciada en este dispositivo
+        path: 'reset-password',
+        name: 'reset-password',
+        component: ResetPasswordView,
       },
     ],
   },

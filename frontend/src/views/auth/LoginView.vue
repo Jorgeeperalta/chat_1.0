@@ -61,6 +61,12 @@
         class="mb-2"
       />
 
+      <div class="forgot-link text-right mb-4">
+        <router-link :to="{ name: 'forgot-password' }" class="text-body-2 text-primary">
+          {{ $t('auth.forgotPassword') }}
+        </router-link>
+      </div>
+
 
       <!-- Botón de iniciar sesión -->
       <v-btn
@@ -222,6 +228,11 @@ const handleLogin = async () => {
 
     .register-link {
       margin-top: 16px;
+    }
+
+    .forgot-link a {
+      text-decoration: none;
+      font-weight: 500;
     }
   }
 

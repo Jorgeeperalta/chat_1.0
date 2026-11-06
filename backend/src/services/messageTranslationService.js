@@ -128,6 +128,14 @@ const localizeMessagesForReader = async (messages, readerId) => {
   const readerLanguageId = getReadingLanguageId(reader);
   if (!readerLanguageId) return messages;
 
+  // Escritos en su mismo idioma: la traducción guardada es para otro integrante, no se muestra
+  for (const message of messages) {
+    if (message.sender_id !== readerId && message.original_language_id === readerLanguageId) {
+      message.setDataValue('translated_content', null);
+      message.setDataValue('target_language_id', null);
+    }
+  }
+
   // Mensajes ajenos cuya traducción guardada no está en el idioma del lector
   const pending = messages.filter(message =>
     message.sender_id !== readerId &&
@@ -162,6 +170,7 @@ const localizeMessagesForReader = async (messages, readerId) => {
 };
 
 module.exports = {
+  getReadingLanguageId,
   translateForParticipants,
   localizeMessagesForReader,
 };

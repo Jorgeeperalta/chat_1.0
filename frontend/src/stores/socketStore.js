@@ -180,6 +180,14 @@ export const useSocketStore = defineStore('socket', () => {
     socket.value.on('message_translation_updated', (data) => {
       chatStore.updateMessageTranslation(data);
     });
+
+    // Notas de voz: transcripción (para todos) y traducción hablada (para cada receptor)
+    socket.value.on('message_transcribed', (data) => {
+      chatStore.applyTranscription(data);
+    });
+    socket.value.on('voice_translation_ready', (data) => {
+      chatStore.applyVoiceTranslation(data);
+    });
     
     // Evento: nuevo mensaje de audio
     socket.value.on('new_audio_message', (data) => {

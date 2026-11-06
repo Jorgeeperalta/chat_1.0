@@ -188,8 +188,12 @@
         @send:file="sendFiles"
         @change="handleTyping"
         @keydown.esc="cancelComposerContext"
+        @ocr="ocrDialog = true"
       />
     </div>
+
+    <!-- Documento escaneado a texto (cuentas empresariales) -->
+    <DocumentOcrDialog v-model="ocrDialog" @use-text="useOcrText" />
 
     <!-- Foto de perfil en grande -->
     <v-dialog v-model="photoViewer" max-width="480">
@@ -237,6 +241,7 @@ import { useI18n } from 'vue-i18n';
 import MessageInput from '@/components/chat/MessageInput.vue';
 import MessageBubble from '@/components/chat/MessageBubble.vue';
 import GroupMembersDialog from '@/components/chat/GroupMembersDialog.vue';
+import DocumentOcrDialog from '@/components/chat/DocumentOcrDialog.vue';
 import { compressImage } from '@/utils/imageCompression';
 import { resolveMediaUrl } from '@/utils/media';
 import {
@@ -279,6 +284,15 @@ let typingTimeout = null;
 let isLocalUserTyping = false;
 
 const messageInput = ref(null);
+const ocrDialog = ref(false);
+
+// Texto extraído de un documento: queda en el cuadro de mensaje para revisarlo antes de enviar
+const MAX_MESSAGE_LENGTH = 5000;
+const useOcrText = async (text) => {
+  await nextTick();
+  messageInput.value?.setText(text.slice(0, MAX_MESSAGE_LENGTH));
+  if (text.length > MAX_MESSAGE_LENGTH) snackbar?.show?.({ text: t('ocr.cutForChat', { n: MAX_MESSAGE_LENGTH }), color: 'warning' });
+};
 const replyingTo = ref(null);
 const editingMessage = ref(null);
 const deleteDialog = ref(false);

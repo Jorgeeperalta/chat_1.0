@@ -27,6 +27,8 @@ const messageRoutes = require('./routes/messageRoutes');
 const languageRoutes = require('./routes/languageRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const pushRoutes = require('./routes/pushRoutes');
+const documentRoutes = require('./routes/documentRoutes');
+const mailService = require('./services/mailService');
 
 // Importar middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -130,6 +132,8 @@ app.get('/health', async (req, res) => {
     environment: config.env,
     database: dbConnected ? 'connected' : 'disconnected',
     mistral: mistralHealthy ? 'healthy' : 'unhealthy',
+    // Correo (recuperar contraseña): ok | not configured | error: ...
+    mail: mailService.getStatus(),
   });
 });
 
@@ -143,6 +147,7 @@ app.use('/api/conversations', authMiddleware.verifyToken, conversationRoutes);
 app.use('/api/messages', authMiddleware.verifyToken, messageRoutes);
 app.use('/api/upload', authMiddleware.verifyToken, uploadRoutes);
 app.use('/api/push', authMiddleware.verifyToken, pushRoutes);
+app.use('/api/documents', authMiddleware.verifyToken, documentRoutes);
 
 // Frontend compilado (producción): se sirve desde el mismo servidor, así la app,
 // la API y Socket.io comparten origen y no hace falta CORS.
@@ -306,6 +311,9 @@ const startServer = async () => {
   }
 
   // Iniciar servidor
+  // Probar el SMTP una vez (sin enviar nada): el resultado queda en el log y en /health
+  mailService.verifyConnection().catch(() => {});
+
   server.listen(config.port, () => {
     logger.info(`🚀 Servidor iniciado en http://localhost:${config.port}`);
     logger.info(`🔌 Socket.io disponible en ws://localhost:${config.port}${config.socket.path}`);

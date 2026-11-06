@@ -15,6 +15,7 @@ const messageTranslationService = require('../services/messageTranslationService
 const storageService = require('../services/storageService');
 const pushService = require('../services/pushService');
 const receiptService = require('../services/receiptService');
+const voicePipelineService = require('../services/voicePipelineService');
 const { getAttachmentType, sanitizeFileName } = require('../utils/attachmentTypes');
 const multer = require('multer');
 
@@ -68,6 +69,11 @@ router.get(
       if (messages.length > 0 && !before_id) {
         await receiptService.markRead(req.app.get('io'), req.userId, conversationId, messages[messages.length - 1].id);
       }
+
+      // Cada uno ve la traducción a SU idioma (en un grupo puede haber varios idiomas);
+      // en las notas de voz, también el audio traducido
+      await messageTranslationService.localizeMessagesForReader(messages, req.userId);
+      await voicePipelineService.attachVoiceTranslations(messages, req.userId);
 
       res.json({
         success: true,
@@ -305,8 +311,7 @@ router.post(
         mimetype
       );
 
-      // Todavía no hay servicio de transcripción: el audio se guarda sin texto (igual que por Socket.io)
-      const transcription = null;
+      // La transcripción, traducción y voz traducida llegan después (voicePipelineService)
       const transcriptionLanguageCode = language_code || 'es';
       const transcriptionLanguage = await models.Language.findByCode(transcriptionLanguageCode);
 
@@ -316,10 +321,10 @@ router.post(
         senderId: req.userId,
         audioUrl: audioFile.url,
         audioDuration: duration || 0,
-        audioTranscription: transcription,
+        audioTranscription: null,
         audioTranscriptionLanguageId: transcriptionLanguage?.id,
         originalLanguageId: transcriptionLanguage?.id,
-        translationStatus: 'pending',
+        ...(voicePipelineService.isEnabled() && { translationStatus: 'pending' }),
       });
 
       // Obtener los participantes
@@ -334,19 +339,6 @@ router.post(
         ],
       });
 
-      // Procesar traducciones asíncronamente (solo si hay transcripción que traducir)
-      if (transcription) {
-        setImmediate(() => {
-          messageTranslationService.translateForParticipants({
-            message,
-            content: transcription,
-            sourceLanguage: transcriptionLanguage,
-            participants,
-            senderId: req.userId,
-            io: req.app.get('io'),
-          }).catch(error => logger.warn(`⚠️ Error al traducir el audio ${message.id}: ${error.message}`));
-        });
-      }
 
       // Obtener el mensaje con detalles
       const fullMessage = await models.Message.findByIdWithDetails(message.id);
@@ -363,6 +355,13 @@ router.post(
 
       receiptService.onNewMessageInBackground({ io: req.app.get('io'), message });
       pushService.notifyNewMessageInBackground({ io: req.app.get('io'), message });
+      voicePipelineService.processInBackground({
+        message,
+        audioBuffer: req.file.buffer,
+        mimeType: mimetype,
+        fileName: audioFile.fileName,
+        io: req.app.get('io'),
+      });
 
       res.status(201).json({
         success: true,
@@ -733,6 +732,17 @@ router.delete(
           logger.warn(`⚠️ No se pudo borrar el archivo ${attachment.file_url}: ${error.message}`)
         );
         await attachment.destroy();
+      }
+
+      // Y las versiones traducidas de una nota de voz (texto y audio)
+      const voiceTranslations = await models.MessageVoiceTranslation.findAll({ where: { message_id: messageId } });
+      for (const translation of voiceTranslations) {
+        if (translation.audio_url) {
+          await storageService.deleteFile(translation.audio_url).catch(error =>
+            logger.warn(`⚠️ No se pudo borrar el archivo ${translation.audio_url}: ${error.message}`)
+          );
+        }
+        await translation.destroy();
       }
 
       req.app.get('io')?.to(String(message.conversation_id)).emit('message_deleted', {

@@ -14,6 +14,8 @@ const { pickFields } = require('../utils/pickFields');
 const { models } = require('../models');
 const { generateToken, generateRefreshToken } = require('../middleware/authMiddleware');
 const authMiddleware = require('../middleware/authMiddleware');
+const rateLimit = require('express-rate-limit');
+const passwordResetService = require('../services/passwordResetService');
 
 /**
  * @route POST /api/auth/register
@@ -134,6 +136,8 @@ router.post(
           avatar_url: user.avatar_url,
           native_language_id: user.native_language_id,
           preferred_language_id: user.preferred_language_id,
+          voice_gender: user.voice_gender,
+          account_type: user.account_type,
           status: user.status,
           created_at: user.created_at,
         },
@@ -238,6 +242,8 @@ router.post(
           avatar_url: user.avatar_url,
           native_language_id: user.native_language_id,
           preferred_language_id: user.preferred_language_id,
+          voice_gender: user.voice_gender,
+          account_type: user.account_type,
           status: 'online',
         },
         tokens: {
@@ -330,31 +336,105 @@ router.post('/verify-email', async (req, res) => {
   });
 });
 
+// Recuperar contraseña: límite de intentos por IP (además del límite general de la API).
+// Holgado: en una escuela todos salen a internet con la misma IP. Por cuenta, además,
+// no se manda más de un correo por minuto (passwordResetService).
+const passwordResetLimit = (max) => rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', message: 'Demasiados intentos. Espera unos minutos y vuelve a probar.' },
+});
+const forgotPasswordLimiter = passwordResetLimit(20);
+const resetPasswordLimiter = passwordResetLimit(50);
+
 /**
  * @route POST /api/auth/forgot-password
- * @description Solicita restablecer contraseña (placeholder para implementación futura)
+ * @description Envía por correo un enlace para restablecer la contraseña.
+ * Responde siempre lo mismo, exista o no la cuenta (no revela qué correos están registrados).
  * @access Público
  */
-router.post('/forgot-password', async (req, res) => {
-  // Implementación para recuperación de contraseña
-  res.json({
-    success: true,
-    message: 'Recuperación de contraseña no implementada aún',
-  });
-});
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  [
+    body('email').trim().notEmpty().isEmail().withMessage('El correo electrónico no es válido'),
+  ],
+  (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: 'Validation Error', details: errors.array() });
+    }
+
+    // En segundo plano: si se esperara el envío, el tiempo de respuesta delataría si la cuenta existe
+    setImmediate(() => {
+      passwordResetService.requestReset(req.body.email, req.ip).catch(error =>
+        logger.error(`❌ Error al enviar el enlace para restablecer la contraseña: ${error.message}`));
+    });
+
+    res.json({
+      success: true,
+      message: 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña',
+    });
+  }
+);
+
+/**
+ * @route POST /api/auth/reset-password/verify
+ * @description ¿El enlace sigue sirviendo? (para mostrar el formulario o avisar que venció)
+ * @access Público
+ */
+router.post(
+  '/reset-password/verify',
+  resetPasswordLimiter,
+  async (req, res, next) => {
+    try {
+      const record = await passwordResetService.findValidToken(req.body?.token);
+      res.json({ success: true, valid: Boolean(record) });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
 
 /**
  * @route POST /api/auth/reset-password
- * @description Restablece la contraseña (placeholder para implementación futura)
+ * @description Guarda la nueva contraseña con el token del enlace. El enlace deja de servir y se
+ * cierran las sesiones abiertas de la cuenta.
  * @access Público
  */
-router.post('/reset-password', async (req, res) => {
-  // Implementación para reset de contraseña
-  res.json({
-    success: true,
-    message: 'Reset de contraseña no implementado aún',
-  });
-});
+router.post(
+  '/reset-password',
+  resetPasswordLimiter,
+  [
+    body('token').isString().notEmpty(),
+    body('password')
+      .isString()
+      .isLength({ min: 8, max: 128 }).withMessage('La contraseña debe tener al menos 8 caracteres'),
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ error: 'Validation Error', details: errors.array() });
+      }
+
+      const changed = await passwordResetService.resetPassword(req.body.token, req.body.password);
+      if (!changed) {
+        return res.status(400).json({
+          error: 'InvalidToken',
+          message: 'El enlace no es válido o ya venció. Pide uno nuevo.',
+        });
+      }
+
+      res.json({ success: true, message: 'Contraseña actualizada' });
+    } catch (error) {
+      logger.error(`❌ Error al restablecer la contraseña: ${error.message}`);
+      next(error);
+    }
+  }
+);
 
 /**
  * @route GET /api/auth/me
@@ -407,6 +487,8 @@ router.patch(
     body('bio').optional().isLength({ max: 500 }),
     body('preferred_language_id').optional().isInt(),
     body('native_language_id').optional().isInt(),
+    // null = la voz que haya en cada idioma
+    body('voice_gender').optional({ values: 'null' }).isIn(['female', 'male']),
   ],
   async (req, res, next) => {
     try {
@@ -419,7 +501,7 @@ router.patch(
       }
 
       // Solo estos campos: antes se guardaba todo lo que llegaba (email, is_active, ...)
-      const updates = pickFields(req.body, ['first_name', 'last_name', 'bio']);
+      const updates = pickFields(req.body, ['first_name', 'last_name', 'bio', 'voice_gender']);
 
       // Un solo idioma por usuario: llegue el preferido o el nativo, se guarda en las dos
       // columnas. Si quedaban distintas, la traducción salía cruzada o fallaba.

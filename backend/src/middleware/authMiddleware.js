@@ -43,6 +43,18 @@ const verifyJwtToken = async (token) => {
  * @param {string} [expiresIn] - Tiempo de expiración
  * @returns {string}
  */
+/**
+ * El token se emitió antes del último cambio de contraseña: esa sesión ya no vale
+ * (p. ej. alguien que entró con la contraseña vieja). `iat` está en segundos.
+ * @param {Object} user - Usuario con password_changed_at
+ * @param {Object} decoded - Token decodificado
+ * @returns {boolean}
+ */
+const issuedBeforePasswordChange = (user, decoded) => {
+  if (!user?.password_changed_at || !decoded?.iat) return false;
+  return decoded.iat < Math.floor(new Date(user.password_changed_at).getTime() / 1000);
+};
+
 const generateToken = (payload, expiresIn = config.jwt.expiresIn) => {
   return jwt.sign(payload, config.jwt.secret, {
     expiresIn,
@@ -109,6 +121,13 @@ const verifyToken = async (req, res, next) => {
       });
     }
 
+    if (issuedBeforePasswordChange(user, decoded)) {
+      return res.status(401).json({
+        error: 'TokenExpired',
+        message: 'La sesión se cerró porque cambió la contraseña',
+      });
+    }
+
     // Añadir usuario al request
     req.user = user.toJSON();
     req.token = token;
@@ -156,7 +175,7 @@ const verifyTokenOptional = async (req, res, next) => {
       attributes: { exclude: ['password_hash'] },
     });
 
-    if (user && user.is_active) {
+    if (user && user.is_active && !issuedBeforePasswordChange(user, decoded)) {
       req.user = user.toJSON();
       req.token = token;
       req.userId = user.id;
@@ -289,6 +308,9 @@ const refreshTokens = async (refreshToken) => {
     if (!user || !user.is_active) {
       throw new Error('Usuario no válido');
     }
+    if (issuedBeforePasswordChange(user, decoded)) {
+      throw new Error('La sesión se cerró porque cambió la contraseña');
+    }
 
     const newAccessToken = generateToken({ userId: user.id });
     const newRefreshToken = generateRefreshToken({ userId: user.id });
@@ -311,4 +333,5 @@ module.exports = {
   generateRefreshToken,
   refreshTokens,
   verifyJwtToken,
+  issuedBeforePasswordChange,
 };

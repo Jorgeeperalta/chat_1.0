@@ -127,6 +127,27 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: true,
         field: 'is_active',
       },
+      // Voz con la que se leen sus notas de voz traducidas a otro idioma (null = la que haya)
+      voice_gender: {
+        type: DataTypes.ENUM('female', 'male'),
+        allowNull: true,
+        defaultValue: null,
+        field: 'voice_gender',
+      },
+      // Último cambio de contraseña: las sesiones iniciadas antes dejan de valer
+      password_changed_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        defaultValue: null,
+        field: 'password_changed_at',
+      },
+      // Las cuentas 'business' pueden pasar documentos por OCR. Se asigna en la base, no desde la app.
+      account_type: {
+        type: DataTypes.ENUM('personal', 'business'),
+        allowNull: false,
+        defaultValue: 'personal',
+        field: 'account_type',
+      },
       created_at: {
         type: DataTypes.DATE,
         allowNull: false,

@@ -39,6 +39,8 @@
             <v-list-item prepend-icon="mdi-image-multiple" :title="$t('chat.attach.gallery')" @click="openPicker('gallery')" />
             <v-list-item prepend-icon="mdi-camera" :title="$t('chat.attach.camera')" @click="openPicker('camera')" />
             <v-list-item prepend-icon="mdi-file-document-outline" :title="$t('chat.attach.document')" @click="openPicker('document')" />
+            <!-- Cuentas empresariales: pasar documentos escaneados a texto -->
+            <v-list-item v-if="isBusiness" prepend-icon="mdi-text-recognition" :title="$t('ocr.menuItem')" @click="emit('ocr')" />
           </v-list>
         </v-menu>
 
@@ -240,6 +242,7 @@
 import { ref, computed, onMounted, onUnmounted, inject, nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUserStore } from '@/stores/userStore';
+import { useAuthStore } from '@/stores/authStore';
 import { useThemeStore } from '@/stores/themeStore';
 
 // ============================================
@@ -295,6 +298,7 @@ const emit = defineEmits([
   'focus',
   'blur',
   'change',
+  'ocr',
 ]);
 
 // ============================================
@@ -310,6 +314,8 @@ const { t } = useI18n();
 // ============================================
 
 const userStore = useUserStore();
+const authStore = useAuthStore();
+const isBusiness = computed(() => authStore.user?.account_type === 'business');
 const themeStore = useThemeStore();
 
 // ============================================

@@ -206,10 +206,21 @@
         <!-- Mensaje de voz -->
         <template v-if="message.type === 'voice'">
           <div class="voice-message">
+            <!-- En otro idioma: se escucha la traducción hablada, con opción de volver al original -->
+            <div v-if="hasTranslatedVoice" class="voice-source text-caption">
+              <v-icon :icon="playOriginalVoice ? 'mdi-account-voice' : 'mdi-translate'" size="14" />
+              <span class="voice-source__label">
+                {{ playOriginalVoice ? $t('chat.voice.original') : $t('chat.voice.translated', { language: translatedLanguageName }) }}
+              </span>
+              <button type="button" class="voice-source__toggle" @click.stop="playOriginalVoice = !playOriginalVoice">
+                {{ playOriginalVoice ? $t('chat.voice.listenTranslation') : $t('chat.voice.listenOriginal') }}
+              </button>
+            </div>
+
             <VoiceMessagePlayer
-              v-if="message.audio_url"
-              :audio-url="message.audio_url"
-              :duration="Number(message.duration) || 0"
+              v-if="voiceUrl"
+              :audio-url="voiceUrl"
+              :duration="isTranslatedVoice ? 0 : Number(message.duration) || 0"
               :is-current-user="isCurrentUser"
               @play="handlePlay"
               @pause="handlePause"
@@ -218,6 +229,12 @@
             <div v-else class="voice-unavailable text-caption">
               <v-icon icon="mdi-microphone-off" size="small" start />
               {{ $t('chat.voice.loadError') }}
+            </div>
+
+            <!-- Transcripción y traducción en camino -->
+            <div v-if="isProcessingVoice" class="voice-processing text-caption">
+              <v-progress-circular indeterminate size="12" width="2" />
+              {{ message.transcription ? $t('chat.voice.translating') : $t('chat.voice.transcribing') }}
             </div>
             
             <!-- Transcripción (si existe) -->
@@ -447,6 +464,25 @@ const formatFileSize = (bytes) => {
 };
 
 // Mensajes reales (ya confirmados por el servidor) que no son del sistema
+// ---- Notas de voz: versión traducida y hablada en mi idioma ----
+
+const playOriginalVoice = ref(false);
+const hasTranslatedVoice = computed(() => !isCurrentUser.value && Boolean(props.message.translated_audio_url));
+const isTranslatedVoice = computed(() => hasTranslatedVoice.value && !playOriginalVoice.value);
+const voiceUrl = computed(() => (isTranslatedVoice.value ? props.message.translated_audio_url : props.message.audio_url));
+const translatedLanguageName = computed(() => {
+  const language = translationStore.getLanguageById(props.message.target_language_id);
+  return language?.native_name || language?.name || '';
+});
+
+// Las notas viejas pueden haber quedado en "pending": solo se muestra para las recientes
+const PROCESSING_WINDOW_MS = 5 * 60 * 1000;
+const isProcessingVoice = computed(() =>
+  props.message.translation_status === 'pending'
+  && props.message.id != null
+  && Date.now() - new Date(props.message.created_at || 0).getTime() < PROCESSING_WINDOW_MS
+);
+
 const hasActions = computed(() =>
   !isSystemMessage.value && !isDeleted.value && props.message.id != null
 );
@@ -904,6 +940,38 @@ const formatDate = (dateString) => {
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .voice-source {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.85;
+
+    &__label {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &__toggle {
+      padding: 0 2px;
+      border: 0;
+      background: none;
+      color: rgb(var(--v-theme-primary));
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+  }
+
+  .voice-processing {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.75;
   }
 
   .voice-transcription p {

@@ -373,6 +373,34 @@ export const useChatStore = defineStore('chat', () => {
   };
 
   /**
+   * Nota de voz transcrita (Voxtral): llega a todos los integrantes
+   * @param {{messageId: number, transcription?: string, originalLanguageId?: number, translationStatus: string}} data
+   */
+  const applyTranscription = (data) => {
+    patchMessage(data.messageId, {
+      ...(data.transcription !== undefined && {
+        transcription: data.transcription,
+        audio_transcription: data.transcription,
+      }),
+      ...(data.originalLanguageId && { original_language_id: data.originalLanguageId }),
+      translation_status: data.translationStatus,
+    });
+  };
+
+  /**
+   * Nota de voz traducida a mi idioma, con su versión hablada (si hay voz para mi idioma)
+   * @param {{messageId: number, translatedContent: string, targetLanguageId: number, translatedAudioUrl: string|null}} data
+   */
+  const applyVoiceTranslation = (data) => {
+    patchMessage(data.messageId, {
+      translated_content: data.translatedContent,
+      target_language_id: data.targetLanguageId,
+      translated_audio_url: resolveMediaUrl(data.translatedAudioUrl),
+      translation_status: 'completed',
+    });
+  };
+
+  /**
    * Procesa un mensaje para agregar metadatos
    * @param {Object} message - Mensaje
    * @param {number} conversationId - ID de la conversación
@@ -391,6 +419,7 @@ export const useChatStore = defineStore('chat', () => {
       conversation_id: conversationId,
       type: message.type || (message.message_type === 'audio' ? 'voice' : message.message_type),
       audio_url: resolveMediaUrl(message.audio_url),
+      translated_audio_url: resolveMediaUrl(message.translated_audio_url),
       attachments: message.attachments?.map(attachment => ({
         ...attachment,
         file_url: resolveMediaUrl(attachment.file_url),
@@ -1142,6 +1171,8 @@ export const useChatStore = defineStore('chat', () => {
     addTextMessage,
     addAudioMessage,
     updateMessageTranslation,
+    applyTranscription,
+    applyVoiceTranslation,
     processMessage,
     formatMessageDate,
     handleNewTextMessage,

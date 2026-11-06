@@ -16,6 +16,17 @@ if (fs.existsSync(envPath)) {
   console.warn('⚠️  Archivo .env no encontrado. Usando valores por defecto.');
 }
 
+// Variable con JSON: si está mal escrita no se cae el servidor, se usa el valor por defecto
+const parseJson = (value, fallback) => {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    console.warn(`⚠️  JSON inválido en una variable de entorno: ${value.slice(0, 60)}`);
+    return fallback;
+  }
+};
+
 // ============================================
 // VALIDACIÓN DE VARIABLES OBLIGATORIAS
 // ============================================
@@ -116,8 +127,43 @@ const config = {
     // Fallback (opcional)
     fallbackProvider: process.env.FALLBACK_TRANSLATION_API || null,
     fallbackApiKey: process.env.FALLBACK_API_KEY || null,
+
+    // Notas de voz: transcripción (Voxtral) + traducción + voz sintetizada en el idioma de cada receptor
+    voicePipelineEnabled: process.env.VOICE_PIPELINE_ENABLED !== 'false',
+    sttModel: process.env.MISTRAL_STT_MODEL || 'voxtral-mini-transcribe-3',
+    ttsModel: process.env.MISTRAL_TTS_MODEL || 'voxtral-mini-tts-3-0',
+    // Voces propias por idioma y género, p. ej. {"es":{"male":"<id de una voz guardada>"}}
+    ttsVoices: parseJson(process.env.MISTRAL_TTS_VOICES, {}),
+    audioTimeoutMs: parseInt(process.env.MISTRAL_AUDIO_TIMEOUT_MS, 10) || 60000,
+
+    // OCR de documentos (cuentas empresariales)
+    ocrModel: process.env.MISTRAL_OCR_MODEL || 'mistral-ocr-latest',
+    ocrTimeoutMs: parseInt(process.env.MISTRAL_OCR_TIMEOUT_MS, 10) || 120000,
+    ocrMaxFileSizeMB: parseInt(process.env.OCR_MAX_FILE_SIZE_MB, 10) || 20,
+    ocrMaxFiles: parseInt(process.env.OCR_MAX_FILES, 10) || 10,
+    ocrConcurrency: parseInt(process.env.OCR_CONCURRENCY, 10) || 3,
   },
   
+  // ============================================
+  // CORREO (recuperar contraseña)
+  // ============================================
+  mail: {
+    host: process.env.SMTP_HOST || null,
+    port: parseInt(process.env.SMTP_PORT, 10) || 587,
+    // true para el puerto 465 (SSL directo); en 587 se usa STARTTLS
+    secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === 'true' : parseInt(process.env.SMTP_PORT, 10) === 465,
+    user: process.env.SMTP_USER || null,
+    password: process.env.SMTP_PASS || null,
+    from: process.env.MAIL_FROM || process.env.SMTP_USER || null,
+  },
+
+  // Dirección pública de la app, para los enlaces de los correos
+  appUrl: (process.env.APP_URL || process.env.CORS_ORIGIN?.split(',')[0] || 'http://localhost:5173').replace(/\/+$/, ''),
+
+  passwordReset: {
+    expiresMinutes: parseInt(process.env.PASSWORD_RESET_EXPIRES_MINUTES, 10) || 30,
+  },
+
   // ============================================
   // FRONTEND COMPILADO (producción)
   // ============================================

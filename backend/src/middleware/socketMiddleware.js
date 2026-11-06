@@ -12,7 +12,9 @@ const messageTranslationService = require('../services/messageTranslationService
 const storageService = require('../services/storageService');
 const pushService = require('../services/pushService');
 const receiptService = require('../services/receiptService');
+const voicePipelineService = require('../services/voicePipelineService');
 const { userRoom } = require('../utils/socketRooms');
+const { issuedBeforePasswordChange } = require('./authMiddleware');
 
 // Extensión del archivo según el tipo MIME del audio grabado
 const AUDIO_EXTENSIONS = {
@@ -70,6 +72,9 @@ const authenticateSocket = async (socket, next) => {
 
     if (!user || !user.is_active) {
       return next(new Error('Usuario no válido'));
+    }
+    if (issuedBeforePasswordChange(user, decoded)) {
+      return next(new Error('La sesión se cerró porque cambió la contraseña'));
     }
 
     // Guardar información en el socket
@@ -332,8 +337,7 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
       mimeType
     );
 
-    // Todavía no hay servicio de transcripción: el audio se guarda sin texto
-    // (y por lo tanto no hay nada que traducir).
+    // La transcripción, traducción y voz traducida llegan después (voicePipelineService)
     const transcriptionLanguage = await models.Language.findByCode(languageCode || 'es');
     const durationSeconds = Math.max(0, Math.round(Number(duration) || 0));
 
@@ -347,6 +351,7 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
       audioTranscriptionLanguageId: transcriptionLanguage?.id,
       originalLanguageId: transcriptionLanguage?.id,
       replyToMessageId: replyTo,
+      ...(voicePipelineService.isEnabled() && { translationStatus: 'pending' }),
     });
 
     // Obtener los participantes
@@ -397,6 +402,13 @@ const handleAudioMessage = async (socket, data, io, acknowledge) => {
     acknowledge?.({ success: true, messageId: message.id, clientMessageId, audioUrl: audioFile.url });
     receiptService.onNewMessageInBackground({ io, message });
     pushService.notifyNewMessageInBackground({ io, message });
+    voicePipelineService.processInBackground({
+      message,
+      audioBuffer,
+      mimeType,
+      fileName: `audio.${extension}`,
+      io,
+    });
 
     logger.info(`🎤 Mensaje de audio enviado por ${socket.userId} en ${conversationId}`);
   } catch (error) {

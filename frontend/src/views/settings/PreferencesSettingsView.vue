@@ -108,6 +108,29 @@
       </v-card-text>
     </v-card>
 
+    <!-- Voz con la que otros escuchan tus notas de voz traducidas (se guarda al instante) -->
+    <v-card>
+      <v-card-title>{{ $t('settings.voiceTitle') }}</v-card-title>
+      <v-card-text>
+        <div class="text-caption text-medium-emphasis mb-3">{{ $t('settings.voiceHint') }}</div>
+        <v-btn-toggle
+          :model-value="authStore.user?.voice_gender || 'auto'"
+          mandatory
+          divided
+          color="primary"
+          variant="outlined"
+          density="comfortable"
+          class="voice-toggle"
+          :disabled="savingVoice"
+          @update:model-value="changeVoiceGender"
+        >
+          <v-btn value="female" prepend-icon="mdi-face-woman-outline">{{ $t('settings.voiceFemale') }}</v-btn>
+          <v-btn value="male" prepend-icon="mdi-face-man-outline">{{ $t('settings.voiceMale') }}</v-btn>
+          <v-btn value="auto" prepend-icon="mdi-account-voice">{{ $t('settings.voiceAuto') }}</v-btn>
+        </v-btn-toggle>
+      </v-card-text>
+    </v-card>
+
     <v-btn color="primary" size="large" :loading="loading" block @click="handleSave">
       <v-icon icon="mdi-content-save" start />
       {{ $t('common.save') }}
@@ -174,6 +197,21 @@ const fetchSettings = async () => {
 
 const changeTheme = (theme) => {
   themeStore.setTheme(theme);
+};
+
+const savingVoice = ref(false);
+
+const changeVoiceGender = async (value) => {
+  savingVoice.value = true;
+  try {
+    await authStore.updateProfile({ voice_gender: value === 'auto' ? null : value });
+    showSnackbarMessage(t('settings.saved'), 'success');
+  } catch (error) {
+    console.error('Error al guardar la voz:', error);
+    showSnackbarMessage(t('settings.saveError'), 'error');
+  } finally {
+    savingVoice.value = false;
+  }
 };
 
 const handleSave = async () => {
@@ -289,6 +327,19 @@ onMounted(() => {
   &__name {
     font-size: 0.78rem;
     text-align: center;
+  }
+}
+
+// Tres opciones en una fila; en pantallas angostas se reparten el ancho
+.voice-toggle {
+  width: 100%;
+  height: auto !important;
+
+  .v-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 0 6px;
+    text-transform: none;
   }
 }
 </style>
