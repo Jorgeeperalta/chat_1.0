@@ -19,6 +19,7 @@ const LoginView = () => import('@/views/auth/LoginView.vue');
 const RegisterView = () => import('@/views/auth/RegisterView.vue');
 const ForgotPasswordView = () => import('@/views/auth/ForgotPasswordView.vue');
 const ResetPasswordView = () => import('@/views/auth/ResetPasswordView.vue');
+const CallView = () => import('@/views/call/CallView.vue');
 
 // Vistas principales
 const HomeView = () => import('@/views/HomeView.vue');
@@ -64,6 +65,14 @@ const routes = [
         component: ResetPasswordView,
       },
     ],
+  },
+  {
+    // Videollamada a pantalla completa (sin la barra de la app)
+    path: '/call/:conversationId',
+    name: 'call',
+    component: CallView,
+    meta: { requiresAuth: true },
+    props: true,
   },
   {
     path: '/',

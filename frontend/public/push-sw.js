@@ -5,14 +5,14 @@
 
 // Textos en el idioma del teléfono (los mismos idiomas que la app)
 const TEXTS = {
-  es: { newMessage: 'Tienes un mensaje nuevo', audio: 'Mensaje de voz', image: 'Foto', video: 'Video', file: 'Archivo' },
-  en: { newMessage: 'You have a new message', audio: 'Voice message', image: 'Photo', video: 'Video', file: 'File' },
-  pt: { newMessage: 'Você tem uma nova mensagem', audio: 'Mensagem de voz', image: 'Foto', video: 'Vídeo', file: 'Arquivo' },
-  fr: { newMessage: 'Vous avez un nouveau message', audio: 'Message vocal', image: 'Photo', video: 'Vidéo', file: 'Fichier' },
-  de: { newMessage: 'Du hast eine neue Nachricht', audio: 'Sprachnachricht', image: 'Foto', video: 'Video', file: 'Datei' },
-  it: { newMessage: 'Hai un nuovo messaggio', audio: 'Messaggio vocale', image: 'Foto', video: 'Video', file: 'File' },
+  es: { newMessage: 'Tienes un mensaje nuevo', audio: 'Mensaje de voz', image: 'Foto', video: 'Video', file: 'Archivo', call: 'Videollamada entrante' },
+  en: { newMessage: 'You have a new message', audio: 'Voice message', image: 'Photo', video: 'Video', file: 'File', call: 'Incoming video call' },
+  pt: { newMessage: 'Você tem uma nova mensagem', audio: 'Mensagem de voz', image: 'Foto', video: 'Vídeo', file: 'Arquivo', call: 'Videochamada recebida' },
+  fr: { newMessage: 'Vous avez un nouveau message', audio: 'Message vocal', image: 'Photo', video: 'Vidéo', file: 'Fichier', call: 'Appel vidéo entrant' },
+  de: { newMessage: 'Du hast eine neue Nachricht', audio: 'Sprachnachricht', image: 'Foto', video: 'Video', file: 'Datei', call: 'Eingehender Videoanruf' },
+  it: { newMessage: 'Hai un nuovo messaggio', audio: 'Messaggio vocale', image: 'Foto', video: 'Video', file: 'File', call: 'Videochiamata in arrivo' },
 };
-const ICONS = { audio: '🎤', image: '📷', video: '🎥', file: '📎' };
+const ICONS = { audio: '🎤', image: '📷', video: '🎥', file: '📎', call: '📹' };
 const text = (key) => {
   const language = String(self.navigator?.language || 'en').toLowerCase().split('-')[0];
   return (TEXTS[language] || TEXTS.en)[key];
@@ -41,6 +41,8 @@ self.addEventListener('push', (event) => {
     vibrate: data.vibrate || [200, 100, 200],
     timestamp: Date.now(),
     data: { url: data.url || '/home' },
+    // Una llamada queda en pantalla hasta que se toque
+    requireInteraction: data.kind === 'call',
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

@@ -173,7 +173,7 @@ const sync = async (options = {}) => {
 
 /**
  * Aplica los cambios de esquema que el código necesita y que una base existente puede no tener
- * (equivale a migrations/002 a 006). Es idempotente: si ya están, no hace nada.
+ * (equivale a migrations/002 a 007). Es idempotente: si ya están, no hace nada.
  * Así basta con subir el código al hosting, sin correr SQL a mano.
  */
 const ensureSchema = async () => {
@@ -243,6 +243,16 @@ const ensureSchema = async () => {
       defaultValue: null,
     });
     console.log('✅ Columna users.password_changed_at creada');
+  }
+
+  // Videollamadas: idioma de los subtítulos
+  if (!userColumns.subtitle_language) {
+    await queryInterface.addColumn('users', 'subtitle_language', {
+      type: Sequelize.DataTypes.ENUM('es', 'en', 'fr', 'it', 'de', 'zh'),
+      allowNull: true,
+      defaultValue: null,
+    });
+    console.log('✅ Columna users.subtitle_language creada');
   }
 
   // Tablas nuevas: sync() solo crea la tabla si no existe (no modifica una existente)

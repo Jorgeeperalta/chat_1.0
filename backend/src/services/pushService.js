@@ -151,9 +151,44 @@ const notifyNewMessageInBackground = (params) => {
   });
 };
 
+/**
+ * Videollamada entrante: avisa a los integrantes que no tienen la app a la vista
+ * (los que la tienen abierta reciben el aviso por Socket.io)
+ * @param {Object} params
+ * @param {Object} params.io
+ * @param {Object} params.caller - Usuario que llama
+ * @param {Object} params.conversation - id, type, name
+ * @param {number[]} params.recipientIds
+ */
+const notifyIncomingCall = async ({ io, caller, conversation, recipientIds }) => {
+  if (!enabled) return;
+  const callerName = displayName(caller);
+  for (const userId of recipientIds) {
+    if (await isAppVisible(io, userId)) continue;
+    await sendToUser(userId, {
+      title: conversation.type === 'group' ? conversation.name : callerName,
+      kind: 'call',
+      sender: conversation.type === 'group' ? callerName : null,
+      tag: `call-${conversation.id}`,
+      url: `/call/${conversation.id}?join=1`,
+      conversationId: conversation.id,
+      vibrate: [400, 200, 400, 200, 400],
+    });
+  }
+};
+
+const notifyIncomingCallInBackground = (params) => {
+  setImmediate(() => {
+    notifyIncomingCall(params).catch(error =>
+      logger.warn(`⚠️ Error al avisar la videollamada por push: ${error.message}`)
+    );
+  });
+};
+
 module.exports = {
   isEnabled,
   getPublicKey,
   notifyNewMessage,
   notifyNewMessageInBackground,
+  notifyIncomingCallInBackground,
 };

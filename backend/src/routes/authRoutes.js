@@ -138,6 +138,7 @@ router.post(
           preferred_language_id: user.preferred_language_id,
           voice_gender: user.voice_gender,
           account_type: user.account_type,
+          subtitle_language: user.subtitle_language,
           status: user.status,
           created_at: user.created_at,
         },
@@ -244,6 +245,7 @@ router.post(
           preferred_language_id: user.preferred_language_id,
           voice_gender: user.voice_gender,
           account_type: user.account_type,
+          subtitle_language: user.subtitle_language,
           status: 'online',
         },
         tokens: {

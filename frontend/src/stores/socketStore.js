@@ -10,6 +10,7 @@ import { io } from 'socket.io-client';
 import { useAuthStore } from './authStore';
 import { useChatStore } from './chatStore';
 import { useConversationStore } from './conversationStore';
+import { useCallStore } from './callStore';
 import { t } from '@/i18n';
 
 /**
@@ -182,6 +183,12 @@ export const useSocketStore = defineStore('socket', () => {
     });
 
     // Notas de voz: transcripción (para todos) y traducción hablada (para cada receptor)
+    // Videollamada entrante (si ya estás en esa llamada, no se muestra el aviso)
+    socket.value.on('call_started', (data) => {
+      if (window.location.pathname === `/call/${data.conversationId}`) return;
+      useCallStore().receiveInvite(data);
+    });
+
     socket.value.on('message_transcribed', (data) => {
       chatStore.applyTranscription(data);
     });

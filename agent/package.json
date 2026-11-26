@@ -1,0 +1,22 @@
+{
+  "name": "converxar-captions-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agente de LiveKit que transcribe (Deepgram Nova-3) y traduce los subtítulos de las videollamadas de Converxar",
+  "type": "module",
+  "main": "src/agent.js",
+  "scripts": {
+    "dev": "node src/agent.js dev",
+    "start": "node src/agent.js start",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.11.0",
+    "@livekit/agents-plugin-deepgram": "^1.11.0",
+    "@livekit/rtc-node": "^1.2.3",
+    "dotenv": "^16.4.5"
+  }
+}

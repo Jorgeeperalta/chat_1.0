@@ -50,8 +50,16 @@
         <span :class="{ 'is-online': isOtherOnline || isTyping }">{{ conversationSubtitle }}</span>
       </div>
       <v-btn
-        v-if="isGroup"
         class="ml-auto"
+        icon="mdi-video-outline"
+        variant="text"
+        density="comfortable"
+        :aria-label="$t('call.start')"
+        :title="$t('call.start')"
+        :to="{ name: 'call', params: { conversationId } }"
+      />
+      <v-btn
+        v-if="isGroup"
         icon="mdi-account-group-outline"
         variant="text"
         density="comfortable"

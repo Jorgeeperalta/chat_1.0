@@ -24,6 +24,9 @@
     <!-- PWA: instalar y actualizar -->
     <PwaPrompts />
 
+    <!-- Videollamada entrante -->
+    <IncomingCallDialog v-if="authStore.isAuthenticated" />
+
     <!-- Router View - Aquí se renderizan las vistas -->
     <router-view v-slot="{ Component, route }">
       <transition name="route-fade" mode="out-in">
@@ -99,6 +102,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useNotificationStore } from '@/stores/notificationStore';
 import NotificationBar from '@/components/common/NotificationBar.vue';
 import PwaPrompts from '@/components/common/PwaPrompts.vue';
+import IncomingCallDialog from '@/components/call/IncomingCallDialog.vue';
 import { syncPushSubscription, listenForNotificationClicks } from '@/services/pushNotifications';
 
 // ============================================

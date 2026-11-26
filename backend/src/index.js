@@ -29,6 +29,8 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const pushRoutes = require('./routes/pushRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const mailService = require('./services/mailService');
+const callRoutes = require('./routes/callRoutes');
+const livekitService = require('./services/livekitService');
 
 // Importar middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -84,7 +86,13 @@ if (config.security.helmetEnabled) {
         'media-src': ["'self'", 'blob:', 'data:'],
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'data:', 'https://fonts.gstatic.com'],
-        'connect-src': ["'self'", 'ws:', 'wss:'],
+        // Videollamadas: además del WebSocket, livekit-client pide por https al servidor de
+        // LiveKit (validación y lista de regiones de LiveKit Cloud)
+        'connect-src': [
+          "'self'", 'ws:', 'wss:',
+          ...(config.livekit.url ? [config.livekit.url.replace(/^ws(s?):\/\//, 'http$1://')] : []),
+          'https://*.livekit.cloud',
+        ],
         'upgrade-insecure-requests': null,
       },
     },
@@ -134,6 +142,8 @@ app.get('/health', async (req, res) => {
     mistral: mistralHealthy ? 'healthy' : 'unhealthy',
     // Correo (recuperar contraseña): ok | not configured | error: ...
     mail: mailService.getStatus(),
+    videoCalls: livekitService.isConfigured() ? 'configured' : 'not configured',
+    node: process.version,
   });
 });
 
@@ -148,6 +158,10 @@ app.use('/api/messages', authMiddleware.verifyToken, messageRoutes);
 app.use('/api/upload', authMiddleware.verifyToken, uploadRoutes);
 app.use('/api/push', authMiddleware.verifyToken, pushRoutes);
 app.use('/api/documents', authMiddleware.verifyToken, documentRoutes);
+// Videollamadas
+app.use('/api/rooms', authMiddleware.verifyToken, callRoutes.roomsRouter);
+app.use('/api/livekit', authMiddleware.verifyToken, callRoutes.livekitRouter);
+app.use('/api/user', authMiddleware.verifyToken, callRoutes.userRouter);
 
 // Frontend compilado (producción): se sirve desde el mismo servidor, así la app,
 // la API y Socket.io comparten origen y no hace falta CORS.

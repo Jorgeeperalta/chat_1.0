@@ -165,6 +165,29 @@ const config = {
   },
 
   // ============================================
+  // VIDEOLLAMADAS (LiveKit)
+  // ============================================
+  livekit: {
+    // wss://<proyecto>.livekit.cloud (lo usa el navegador para conectarse)
+    url: process.env.LIVEKIT_URL || null,
+    apiKey: process.env.LIVEKIT_API_KEY || null,
+    apiSecret: process.env.LIVEKIT_API_SECRET || null,
+    // Nombre del agente de subtítulos (agent/): se despacha explícitamente a cada sala
+    agentName: process.env.LIVEKIT_AGENT_NAME || 'converxar-captions',
+    tokenTtl: process.env.LIVEKIT_TOKEN_TTL || '4h',
+    // Sala vacía: se cierra sola a los N segundos
+    emptyTimeoutSeconds: parseInt(process.env.LIVEKIT_EMPTY_TIMEOUT_SECONDS, 10) || 300,
+    // Grabación (opcional): sin bucket configurado, no se graba
+    recording: {
+      s3Bucket: process.env.LIVEKIT_RECORDING_S3_BUCKET || null,
+      s3Region: process.env.LIVEKIT_RECORDING_S3_REGION || null,
+      s3AccessKey: process.env.LIVEKIT_RECORDING_S3_ACCESS_KEY || null,
+      s3Secret: process.env.LIVEKIT_RECORDING_S3_SECRET || null,
+      s3Endpoint: process.env.LIVEKIT_RECORDING_S3_ENDPOINT || null,
+    },
+  },
+
+  // ============================================
   // FRONTEND COMPILADO (producción)
   // ============================================
   frontend: {

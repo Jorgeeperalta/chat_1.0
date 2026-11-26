@@ -134,6 +134,13 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: null,
         field: 'voice_gender',
       },
+      // Idioma de los subtítulos en las videollamadas (null = el de la cuenta, si está disponible)
+      subtitle_language: {
+        type: DataTypes.ENUM('es', 'en', 'fr', 'it', 'de', 'zh'),
+        allowNull: true,
+        defaultValue: null,
+        field: 'subtitle_language',
+      },
       // Último cambio de contraseña: las sesiones iniciadas antes dejan de valer
       password_changed_at: {
         type: DataTypes.DATE,
